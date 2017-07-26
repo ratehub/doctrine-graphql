@@ -1,0 +1,15 @@
+# Codeception Test Suite Configuration
+#
+# Suite for unit (internal) tests.
+
+class_name: UnitTester
+modules:
+    enabled:
+        - Asserts
+        - Db
+    config:
+        Db:
+            dsn: 'pgsql:host=localhost;dbname=testdb'
+            user: 'testuser'
+            password: 'aeqeacadq'
+            cleanup: false
