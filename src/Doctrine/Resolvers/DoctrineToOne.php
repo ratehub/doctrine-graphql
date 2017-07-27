@@ -114,7 +114,7 @@ class DoctrineToOne implements IGraphQLResolver {
 					// Populate the buffer with the loaded data
 					$this->loadBuffered($args, $identifier);
 
-					$em = $this->_typeProvider->getManager();
+					$em = $this->typeProvider->getManager();
 
 					$graphHydrator = new GraphHydrator($em);
 

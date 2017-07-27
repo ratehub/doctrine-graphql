@@ -1,6 +1,6 @@
 <?php
 
-namespace RateHub\GraphQL\Doctrine\Annotation;
+namespace RateHub\GraphQL\Doctrine\Annotations;
 
 use Doctrine\Common\Annotations\Annotation;
 

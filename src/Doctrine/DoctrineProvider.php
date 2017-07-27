@@ -67,6 +67,15 @@ class DoctrineProvider Implements IGraphQLProvider {
 	 */
 	const FILTER_BLACKLIST = 'blacklist';
 
+	/**
+	 * Class path for the type annotation
+	 */
+	const ANNOTATION_TYPE 		= '\RateHub\GraphQL\Doctrine\Annotations\GraphQLType';
+
+	/**
+	 * Class path for the property annotation
+	 */
+	const ANNOTATION_PROPERTY 	= '\RateHub\GraphQL\Doctrine\Annotations\GraphQLProperty';
 
 	/**
 	 * @var string	The name of the provider as stored in the Laravel container
@@ -125,7 +134,14 @@ class DoctrineProvider Implements IGraphQLProvider {
 	 */
 	private $_dataBuffers = array();
 
+	/**
+	 * @var SimpleAnnotationReader
+	 */
+	private $_reader;
 
+	/**
+	 * @var array	Configuration options
+	 */
 	private $_options;
 
 
@@ -155,6 +171,9 @@ class DoctrineProvider Implements IGraphQLProvider {
 		// Initialize core types, includes standard PageInfo type used for pagination
 		$this->initializeCoreTypes();
 
+		$this->_reader = new SimpleAnnotationReader();
+		$this->_reader->addNamespace('RateHub\GraphQL\Doctrine\Annotations');
+
 		// Build base object types based on the doctrine metadata
 		foreach ($this->_em->getMetadataFactory()->getAllMetadata() as $metaType) {
 
@@ -162,11 +181,11 @@ class DoctrineProvider Implements IGraphQLProvider {
 			if ($metaType->isMappedSuperclass)
 				continue;
 
-			$reader = new SimpleAnnotationReader();
-
 			$class = $metaType->getReflectionClass();
 
-			$annotation = $reader->getClassAnnotation($class, 'RateHub\Annotation\GraphQLType');
+			$annotations = $this->_reader->getClassAnnotations($class);
+
+			$annotation = $this->_reader->getClassAnnotation($class, self::ANNOTATION_TYPE);
 
 			// Run the type through the whitelist/blacklist filter
 			if($this->filter($annotation)) {
@@ -294,9 +313,6 @@ class DoctrineProvider Implements IGraphQLProvider {
 		// Input field are used by mutators. Similar to how regular fields are used
 		$inputFields = array();
 
-		// Initialize fields that map to entity methods using the annotation reader
-		$reader = new SimpleAnnotationReader();
-
 		$class = $entityMetaType->getReflectionClass();
 
 		/* -----------------------------------------------
@@ -309,7 +325,7 @@ class DoctrineProvider Implements IGraphQLProvider {
 			$fieldType = $this->mapFieldType($entityMetaType->getTypeOfField($fieldName));
 
 			// Attempt to retrieve the property annotation
-			$annotation = $reader->getPropertyAnnotation($class->getProperty($fieldName), 'RateHub\Annotation\GraphQLProperty');
+			$annotation = $this->_reader->getPropertyAnnotation($class->getProperty($fieldName), self::ANNOTATION_PROPERTY);
 
 			// Check to see if this property should be included via the
 			// blacklist/whitelist filtering
@@ -372,33 +388,41 @@ class DoctrineProvider Implements IGraphQLProvider {
 
 			$fieldName = $association['fieldName'];
 
-			// No override then use the default field resolver;
-			if ($resolverClass === null)
-				$resolverClass = DoctrineField::class;
+			// Attempt to get the annotation on the field
+			$annotation = $this->_reader->getPropertyAnnotation($class->getProperty($fieldName), self::ANNOTATION_PROPERTY);
 
-			// Instantiate the resolver
-			$resolver = new $resolverClass($fieldName, $fieldType, $fieldDescription);
+			// Check to see if this property should be included
+			if($this->filter($annotation)) {
 
-			// Get the definition
-			$fields[$fieldName] = $resolver->getDefinition();
+				// No override then use the default field resolver;
+				if ($resolverClass === null)
+					$resolverClass = DoctrineField::class;
 
-			// Define the filters
-			$filterFields[$fieldName] = array(
-				'name' => $fieldName,
-				'type' => Type::listOf($fieldType)
-			);
+				// Instantiate the resolver
+				$resolver = new $resolverClass($fieldName, $fieldType, $fieldDescription);
 
-			// Define the query filters
-			$queryFilterFields[$fieldName] = array(
-				'name' => $fieldName,
-				'type' => Type::listOf($fieldType)
-			);
+				// Get the definition
+				$fields[$fieldName] = $resolver->getDefinition();
 
-			// Define the input properties
-			$inputFields[$fieldName] = array(
-				'name' => $fieldName,
-				'type' => $fieldType
-			);
+				// Define the filters
+				$filterFields[$fieldName] = array(
+					'name' => $fieldName,
+					'type' => Type::listOf($fieldType)
+				);
+
+				// Define the query filters
+				$queryFilterFields[$fieldName] = array(
+					'name' => $fieldName,
+					'type' => Type::listOf($fieldType)
+				);
+
+				// Define the input properties
+				$inputFields[$fieldName] = array(
+					'name' => $fieldName,
+					'type' => $fieldType
+				);
+
+			}
 
 		}
 
@@ -411,7 +435,7 @@ class DoctrineProvider Implements IGraphQLProvider {
 		foreach ($class->getMethods() AS $method) {
 
 			// Attempt to retrieve the annotation
-			$annotation = $reader->getMethodAnnotation($method, 'RateHub\Annotation\GraphQLProperty');
+			$annotation = $this->_reader->getMethodAnnotation($method, self::ANNOTATION_PROPERTY);
 
 			$methodName = $method->name;
 
@@ -474,14 +498,12 @@ class DoctrineProvider Implements IGraphQLProvider {
 
 			foreach ($entityMetaType->getAssociationMappings() as $association) {
 
-				$reader = new SimpleAnnotationReader();
-
 				$class = $entityMetaType->getReflectionClass();
 
 				$fieldName = $association['fieldName'];
 
 				// Attempt to get the annotation on the field
-				$annotation = $reader->getPropertyAnnotation($class->getProperty($fieldName), 'RateHub\Annotation\GraphQLProperty');
+				$annotation = $this->_reader->getPropertyAnnotation($class->getProperty($fieldName), self::ANNOTATION_PROPERTY);
 
 				// Check to see if this property should be included
 				if($this->filter($annotation)) {
