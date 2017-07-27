@@ -18,7 +18,7 @@ Names and descriptions of types and methods can be overwritten via the GraphQLTy
  
 ### Deferred Loading	
 
-Associations take advantage of deferred loading the a DeferredBuffer. This is used to significantly   reduce the number of queries and solves the N+1 problem when
+Associations take advantage of deferred loading via the DeferredBuffer. This is used to significantly   reduce the number of queries and solves the N+1 problem when
 loading data (https://secure.phabricator.com/book/phabcontrib/article/n_plus_one/)
  
 ### Custom Resolvers	
@@ -33,7 +33,7 @@ results returned in an n-to-Many relationship.
  
 ### Polymorphic Entities	
 
-Provider provides support for querying polymorphic entities and quering unique fields per type
+Provider supports querying polymorphic entities and querying unique fields per type
 using the GraphQL inline fragments.
  
 ## Getting Started
@@ -59,7 +59,7 @@ using the GraphQL inline fragments.
  
  // Set the options including any extensions
  $options = new DoctrineProviderOptions();
- $options->em = $em; // EntityManager
+ $options->em = $em; // EntityManager initialized within your as app as needed
  $options->filter = 'blacklist'
  
  // Initialize the Provider. With blacklist filtering, no
