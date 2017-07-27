@@ -36,4 +36,60 @@ results returned in an n-to-Many relationship.
 Provider provides support for querying polymorphic entities and quering unique fields per type
 using the GraphQL inline fragments.
  
+## Getting Started
  
+ After initializing doctrine you'll need to register
+ the graphql annotations:
+ 
+ ```php
+ use RateHub\GraphQL\Doctrine\AnnotationLoader;
+ use Doctrine\Common\Annotations\AnnotationRegistry;
+  
+ AnnotationRegistry::registerLoader(array(new AnnotationLoader(), "load"));
+ ```
+ 
+ The next step is to initialize the graphql schema:
+ 
+ ```php
+ use RateHub\GraphQL\Doctrine\DoctrineProvider;
+ use RateHub\GraphQL\Doctrine\DoctrineProviderOptions;
+ use RateHub\GraphQL\GraphContext;
+ use GraphQL\Type\Definition\ObjectType;
+ use GraphQL\Schema;
+ 
+ // Set the options including any extensions
+ $options = new DoctrineProviderOptions();
+ $options->em = $em; // EntityManager
+ $options->filter = 'blacklist'
+ 
+ // Initialize the Provider. With blacklist filtering, no
+ // annotations are needed unless something needs to be 
+ // excluded. The provider will generate all queries, 
+ // mutators and types needed.
+ $provider = new DoctrineProvider('default', $options);
+ 
+ // Initialize top level types
+ $context = new GraphContext();
+ $queryType = new ObjectType('query', $provider->getQueries());
+ $mutatorType = new ObjectType('mutator', $provider->getMutators());
+ 
+ // Initialize the schema
+ $schema = new Schema([
+                       'query' => $queryType,
+                       'mutation' => $mutatorType,
+                       'types' => $provider->getTypes()
+                     ]);
+ 
+ ```
+ 
+ From here you can execute a query:
+ 
+ ```php
+    $result = \GraphQL\GraphQL::execute(
+        $schema,
+        $params['query'], // Request parameter containing the graphql query
+        null,
+        $context,
+        null
+    );
+ ```
