@@ -34,6 +34,9 @@ use Doctrine\Common\Annotations\SimpleAnnotationReader;
  *  					Whitelisting will only include types/properties that are marked for inclusion
  * 						Blacklisting will only include types/properties that are not marked for exclusion
  *
+ * Namespaces			Along with white and blacklists types and properties can be associated to different namespaces
+ * 						and specify CRED operations that are allowed for those namespaces.
+ *
  * Naming Overrides. 	Names and descriptions of types and methods can be overwritten via the
  * 						GraphQLType and GraphQLProperty annotations. Field Names are not yet able to be overwritten.
  *
@@ -659,15 +662,15 @@ class DoctrineProvider Implements IGraphQLProvider {
 
 		// Instantiate the filter type
 		if (count($filterFields) > 0)
-			$this->_inputFilterTypes[$name] = new InputObjectType(array(name => $config['name'] . '__Filter', 'fields' => $filterFields));
+			$this->_inputFilterTypes[$name] = new InputObjectType(array('name' => $config['name'] . '__Filter', 'fields' => $filterFields));
 
 		// Instantiate the query filter type
 		if (count($queryFilterFields) > 0)
-			$this->_inputQueryFilterTypes[$name] = new InputObjectType(array(name => $config['name'] . '__QueryFilter', 'fields' => $queryFilterFields));
+			$this->_inputQueryFilterTypes[$name] = new InputObjectType(array('name' => $config['name'] . '__QueryFilter', 'fields' => $queryFilterFields));
 
 		// Instantiate the input type
 		if (count($inputFields) > 0)
-			$this->_inputTypes[$name] = new InputObjectType(array(name => $config['name'] . '__Input', 'fields' => $inputFields));
+			$this->_inputTypes[$name] = new InputObjectType(array('name' => $config['name'] . '__Input', 'fields' => $inputFields));
 
 
 	}
@@ -721,7 +724,9 @@ class DoctrineProvider Implements IGraphQLProvider {
 	 */
 	public function getFilterType($typeName) {
 
-		return $this->_inputFilterTypes[$typeName];
+		if(isset($this->_inputFilterTypes[$typeName]))
+			return $this->_inputFilterTypes[$typeName];
+		return null;
 
 	}
 
@@ -733,7 +738,9 @@ class DoctrineProvider Implements IGraphQLProvider {
 	 */
 	public function getQueryFilterType($typeName) {
 
-		return $this->_inputQueryFilterTypes[$typeName];
+		if(isset($this->_inputQueryFilterTypes[$typeName]))
+			return $this->_inputQueryFilterTypes[$typeName];
+		return null;
 
 	}
 
@@ -745,7 +752,9 @@ class DoctrineProvider Implements IGraphQLProvider {
 	 */
 	public function getInputType($typeName) {
 
-		return $this->_inputTypes[$typeName];
+		if(isset($this->_inputTypes[$typeName]))
+			return $this->_inputTypes[$typeName];
+		return null;
 
 	}
 
@@ -769,8 +778,10 @@ class DoctrineProvider Implements IGraphQLProvider {
 	 */
 	public function getType($typeName) {
 
-		return $this->_types[$typeName];
+		if(isset($this->_types[$typeName]))
+			return $this->_types[$typeName];
 
+		return null;
 	}
 
 	/**
@@ -905,7 +916,10 @@ class DoctrineProvider Implements IGraphQLProvider {
 	 */
 	public function getPermissions($type){
 
-		return $this->_permissionsByType[$type];
+		if(isset($this->_permissionsByType[$type]))
+			return $this->_permissionsByType[$type];
+
+		return new Permission();
 
 	}
 

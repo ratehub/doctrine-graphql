@@ -180,7 +180,7 @@ class GraphResultList {
 			'type' => $pageInfoType
 		));
 
-		return new ObjectType(array(name => $name, 'fields' => $resultFields));
+		return new ObjectType(array('name' => $name, 'fields' => $resultFields));
 
 	}
 

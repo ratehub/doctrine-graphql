@@ -13,7 +13,7 @@ class Permission {
 
 	public function __construct(){
 
-		$this->create 	= false;
+		$this->edit 	= false;
 		$this->read 	= false;
 		$this->update 	= false;
 		$this->delete	= false;
@@ -33,7 +33,7 @@ class Permission {
 	/**
 	 * @var boolean Whether the update permission is set
 	 */
-	public $update;
+	public $edit;
 
 	/**
 	 * @var boolean Whether the delete permission is set
@@ -48,7 +48,7 @@ class Permission {
 	 */
 	public function hasAccess(){
 
-		if($this->create || $this->read || $this->update || $this->delete)
+		if($this->create || $this->read || $this->edit || $this->delete)
 			return true;
 
 		return false;
