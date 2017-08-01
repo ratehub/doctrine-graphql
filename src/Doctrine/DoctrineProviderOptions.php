@@ -16,4 +16,6 @@ class DoctrineProviderOptions
 
     public $mutators;
 
+    public $context;
+
 }

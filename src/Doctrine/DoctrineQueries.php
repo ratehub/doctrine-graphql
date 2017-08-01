@@ -41,15 +41,21 @@ class DoctrineQueries implements IGraphQLQueryProvider{
 
 		foreach($this->_typeProvider->getTypeKeys() as $typeKey){
 
+			$permissions = $this->_typeProvider->getPermissions($typeKey);
+
 			$type = $this->_typeProvider->getType($typeKey);
 
-			// Filter out any scalars
-			if($type instanceOf ObjectType || $type instanceOf InterfaceType) {
+			if($permissions->read) {
 
-				// Use the Root level resolver to generate the query
-				$resolver = new DoctrineRoot($this->_typeProvider, $typeKey, $type);
+				// Filter out any scalars
+				if ($type instanceOf ObjectType || $type instanceOf InterfaceType) {
 
-				$queries[$type->name] = $resolver->getDefinition();
+					// Use the Root level resolver to generate the query
+					$resolver = new DoctrineRoot($this->_typeProvider, $typeKey, $type);
+
+					$queries[$type->name] = $resolver->getDefinition();
+
+				}
 
 			}
 

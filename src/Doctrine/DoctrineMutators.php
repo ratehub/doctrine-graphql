@@ -43,6 +43,8 @@ class DoctrineMutators implements IGraphQLMutatorProvider{
 
 		foreach($typeProvider->getTypeKeys() as $typeKey){
 
+			$permissions = $typeProvider->getPermissions($typeKey);
+
 			$type = $typeProvider->getType($typeKey);
 
 			// Filter out any scalars
@@ -61,11 +63,14 @@ class DoctrineMutators implements IGraphQLMutatorProvider{
 					);
 
 					// Build the Create, Update, Delete Mutators
-					$mutators = array_merge($mutators, $this->getCreateMutator($typeKey, $type, $args));
+					if($permissions->create)
+						$mutators = array_merge($mutators, $this->getCreateMutator($typeKey, $type, $args));
 
-					$mutators = array_merge($mutators, $this->getUpdateMutator($typeKey, $type, $args));
+					if($permissions->edit)
+						$mutators = array_merge($mutators, $this->getUpdateMutator($typeKey, $type, $args));
 
-					$mutators = array_merge($mutators, $this->getDeleteMutator($typeKey, $type, $args));
+					if($permissions->delete)
+						$mutators = array_merge($mutators, $this->getDeleteMutator($typeKey, $type, $args));
 
 				}
 

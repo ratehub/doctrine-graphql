@@ -83,6 +83,10 @@ class DoctrineToMany implements IGraphQLResolver {
 
 		$outputType = $this->getOutputType();
 
+		foreach(GraphPageInfo::getFilters() as $filter){
+			$args[$filter->name] = array('name' => $filter->name, 'type' => $filter->getType());
+		}
+
 		// Generate the argument definition based on the filter type.
 		// No type means the type has no additional inputs
 		if($filterType !== null) {

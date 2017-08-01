@@ -11,5 +11,6 @@ namespace RateHub\GraphQL;
 class GraphContext
 {
 
+	public $namespaces;
 
 }

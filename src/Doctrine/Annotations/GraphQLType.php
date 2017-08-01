@@ -29,4 +29,9 @@ final class GraphQLType extends Annotation {
 	 */
 	public $include;
 
+	/**
+	 * @var array 		List of namespaces that this property should be included in.
+	 */
+	public $namespaces;
+
 }
