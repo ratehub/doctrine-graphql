@@ -709,6 +709,14 @@ class DoctrineProvider Implements IGraphQLProvider {
 			return $this->getType('hstore');
 		} else if ($doctrineType === 'location') {
 			return $this->getType('json');
+		} else if ($doctrineType === 'datetime') {
+			return $this->getType('datetime');
+		} else if ($doctrineType === 'date') {
+			return $this->getType('datetime');
+		} else if ($doctrineType === 'array'){
+			return $this->getType('array');
+		} else if ($doctrineType === 'bigint'){
+			return $this->getType('bigint');
 		}
 
 		// Default to string
