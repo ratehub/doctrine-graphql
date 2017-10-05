@@ -2,6 +2,7 @@
 
 namespace RateHub\GraphQL\Doctrine;
 
+use Doctrine\ORM\Mapping\ClassMetadataInfo;
 use RateHub\GraphQL\Interfaces\IGraphQLProvider;
 
 use Doctrine\ORM\EntityManagerInterface;
@@ -443,49 +444,53 @@ class DoctrineProvider Implements IGraphQLProvider {
 		}
 
 		/* -----------------------------------------------
-		 * ASSOCIATION FIELDS
+		 * ASSOCIATION INPUT AND FILTER FIELDS
 		 * Generate fields for filter and input types based on n-to-ONE
 		 * associations.
 		 */
 		foreach ($entityMetaType->getAssociationMappings() as $association) {
 
-			$fieldName = $association['fieldName'];
+			if($association['type'] == ClassMetadataInfo::MANY_TO_ONE || $association['type'] == ClassMetadataInfo::ONE_TO_ONE) {
 
-			// Attempt to get the annotation on the field
-			$annotation = $this->_reader->getPropertyAnnotation($class->getProperty($fieldName), self::ANNOTATION_PROPERTY);
+				$fieldName = $association['fieldName'];
 
-			$propertyPermissions = $this->initPermissions($annotation);
+				// Attempt to get the annotation on the field
+				$annotation = $this->_reader->getPropertyAnnotation($class->getProperty($fieldName), self::ANNOTATION_PROPERTY);
 
-			// Check to see if this property should be included
-			if($propertyPermissions->hasAccess()) {
+				$propertyPermissions = $this->initPermissions($annotation);
 
-				// No override then use the default field resolver;
-				if ($resolverClass === null)
-					$resolverClass = DoctrineField::class;
+				// Check to see if this property should be included
+				if ($propertyPermissions->hasAccess()) {
 
-				// Instantiate the resolver
-				$resolver = new $resolverClass($fieldName, $fieldType, $fieldDescription);
+					// No override then use the default field resolver;
+					if ($resolverClass === null)
+						$resolverClass = DoctrineField::class;
 
-				// Get the definition
-				$fields[$fieldName] = $resolver->getDefinition();
+					// Instantiate the resolver
+					$resolver = new $resolverClass($fieldName, $fieldType, $fieldDescription);
 
-				// Define the filters
-				$filterFields[$fieldName] = array(
-					'name' => $fieldName,
-					'type' => Type::listOf($fieldType)
-				);
+					// Get the definition
+					$fields[$fieldName] = $resolver->getDefinition();
 
-				// Define the query filters
-				$queryFilterFields[$fieldName] = array(
-					'name' => $fieldName,
-					'type' => Type::listOf($fieldType)
-				);
+					// Define the filters
+					$filterFields[$fieldName] = array(
+						'name' => $fieldName,
+						'type' => Type::listOf($fieldType)
+					);
 
-				// Define the input properties
-				$inputFields[$fieldName] = array(
-					'name' => $fieldName,
-					'type' => $fieldType
-				);
+					// Define the query filters
+					$queryFilterFields[$fieldName] = array(
+						'name' => $fieldName,
+						'type' => Type::listOf($fieldType)
+					);
+
+					// Define the input properties
+					$inputFields[$fieldName] = array(
+						'name' => $fieldName,
+						'type' => $fieldType
+					);
+
+				}
 
 			}
 
@@ -590,17 +595,40 @@ class DoctrineProvider Implements IGraphQLProvider {
 						}
 
 						// Determine the association type and instantiate the appropriate default resolver
-						if (!$entityMetaType->isAssociationInverseSide($fieldName)) {
+						if ($association['type'] === ClassMetadataInfo::ONE_TO_ONE || $association['type'] === ClassMetadataInfo::MANY_TO_ONE){
 
-							$resolver = new DoctrineToOne($this, $fieldName, $fieldDescription, $entityType, $association);
+								$resolver = new DoctrineToOne($this, $fieldName, $fieldDescription, $entityType, $association);
 
 						} else {
 
-							$resolver = new DoctrineToMany($this, $fieldName, $fieldDescription, $entityType, $association);
+								$resolver = new DoctrineToMany($this, $fieldName, $fieldDescription, $entityType, $association);
+
+						//	}else{
+
+/*								$mappedBy = $association['mappedBy'];
+
+								if($mappedBy !== null){
+
+									$resolver = new DoctrineToMany($this, $fieldName, $fieldDescription, $entityType, $association);
+
+								}else{
+
+									$inversedBy = $association['inversedBy'];
+
+									$entityType = $this->getDoctrineType($association['targetEntity']);
+
+									$association = $entityType->getAssociationMapping($inversedBy);
+
+									$resolver = new DoctrineToMany($this, $fieldName, $fieldDescription, $entityType, $association);
+
+								}
+
+							} */
 
 						}
 
-						$fields[$fieldName] = $resolver->getDefinition();
+						if($resolver !== null)
+							$fields[$fieldName] = $resolver->getDefinition();
 
 					}
 
@@ -613,52 +641,55 @@ class DoctrineProvider Implements IGraphQLProvider {
 		};
 
 
+		// If this class has subclasses then we need
+        // to create a interface type for it (if not abstract) and the subclasses
 
-		// Check to see if we should treat this type as an interface
-		// If not an interface then we need to check if the class
-		// implements one. If so then the list of interfaces
-		// needs to be defined on the type.
-		if(!$this->isInterface($entityMetaType)) {
+        $interfaces = [];
 
-			if(count($entityMetaType->parentClasses) > 0){
+		if($this->hasSubClasses($entityMetaType)){
 
-				$interfaces = [];
+            $interfaceConfig = $config;
 
-				foreach($entityMetaType->parentClasses as $parent){
-					array_push($interfaces, $this->getType($parent));
-				}
+            $interfaceConfig['name'] = $interfaceConfig['name'] . '__interface';
 
-				if(count($interfaces) > 0)
-					$config['interfaces'] = $interfaces;
+            $interfaceConfig['resolveType'] = function($value) use ($entityMetaType){
 
-			}
+                $column = $entityMetaType->discriminatorColumn['fieldName'];
 
-			// Instantiate the object type
-			$this->_types[$name] = new ObjectType($config);
+                $type = $value->getDataValue($column);
+
+                // Based on the discriminator column get the class name
+                $instanceType = $entityMetaType->discriminatorMap[$type];
+
+                return $this->getType($instanceType);
+
+            };
+
+            // Instantiate the interface
+            $this->_types[$interfaceConfig['name']] = new InterfaceType($interfaceConfig);
+
+            array_push($interfaces, $this->getType($interfaceConfig['name']));
+
+            $config['interfaces'] = $interfaces;
+
+        }
+
+        // If this class has parent classes then we want to add the parent classes
+        if($this->hasParentClasses($entityMetaType)){
+
+            foreach($entityMetaType->parentClasses as $parent){
+                array_push($interfaces, $this->getType($parent . '__interface'));
+            }
+
+            if(count($interfaces) > 0)
+                $config['interfaces'] = $interfaces;
+
+        }
+
+        // Instantiate the object type if it's not an abstract type
+        $this->_types[$name] = new ObjectType($config);
 
 
-		// If it is an interface (model is polymorphic) then we need to declare it
-		// as such and include a type resolver. The type resolver looks at the discriminator column
-		// to determine what output type the result is.
-		}else{
-
-			$config['resolveType'] = function($value) use ($entityMetaType){
-
-				$column = $entityMetaType->discriminatorColumn['fieldName'];
-
-				$type = $value->getDataValue($column);
-
-				// Based on the discriminator column get the class name
-				$instanceType = $entityMetaType->discriminatorMap[$type];
-
-				return $this->getType($instanceType);
-
-			};
-
-			// Instantiate the interface
-			$this->_types[$name] = new InterfaceType($config);
-
-		}
 
 		// Instantiate the filter type
 		if (count($filterFields) > 0)
@@ -681,11 +712,17 @@ class DoctrineProvider Implements IGraphQLProvider {
 	 * @param $entityMetaType
 	 * @return bool
 	 */
-	private function isInterface($entityMetaType){
+	private function hasSubClasses($entityMetaType){
 
 		return !(count($entityMetaType->subClasses) === 0);
 
 	}
+
+	private function hasParentClasses($entityMetaType){
+
+	    return !(count($entityMetaType->parentClases) === 0);
+
+    }
 
 	/**
 	 * Map a doctrine type to it's representative GraphQL type.
@@ -906,6 +943,10 @@ class DoctrineProvider Implements IGraphQLProvider {
 
 		return $this->_dataBuffers[$key];
 
+	}
+
+	public function getDoctrineType($type){
+		return $this->_doctrineMetadata[$type];
 	}
 
     /**

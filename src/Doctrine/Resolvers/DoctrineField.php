@@ -63,7 +63,13 @@ class DoctrineField implements IGraphQLResolver {
 
 				if(is_array($value))
 					return $value[$this->name];
-				return $value->get($this->name);
+
+				$fieldValue = $value->get($this->name);
+
+				if($this->type !== 'array' && is_array($fieldValue))
+					return json_encode($fieldValue);
+
+				return $fieldValue;
 
 			}
 

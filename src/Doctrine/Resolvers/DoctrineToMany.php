@@ -2,6 +2,7 @@
 
 namespace RateHub\GraphQL\Doctrine\Resolvers;
 
+use Doctrine\ORM\Mapping\ClassMetadataInfo;
 use RateHub\GraphQL\Interfaces\IGraphQLResolver;
 
 use RateHub\GraphQL\Doctrine\DoctrineDeferredBuffer;
@@ -102,8 +103,21 @@ class DoctrineToMany implements IGraphQLResolver {
 			'args' => $args,
 			'resolve' => function($parent, $args, $context, $info){
 
-				// TODO: verify composite ids
-				$identifier = (is_object($parent) ? $parent->get('id') : $parent['id']);
+				// Retrieve the id from the parent object.
+				// Id can be a single field or a composite.
+				$identifier = null;
+
+				if(is_object($parent)){
+					$identifierFields = $this->typeProvider->getTypeIdentifiers($parent->getObject()->className);
+				}else{
+					$identifierFields = ['id'];
+				}
+
+				$identifier = [];
+
+				foreach($identifierFields as $field){
+					$identifier[$field] = $parent->get($field);
+				}
 
 				// Initialize the buffer, if initialized use the existing one
 				$buffer = $this->typeProvider->initBuffer(DoctrineDeferredBuffer::class, $this->entityType);
@@ -142,7 +156,7 @@ class DoctrineToMany implements IGraphQLResolver {
 
 					$graphHydrator = new GraphHydrator($em);
 
-					$dataList = $buffer->result($identifier);
+					$dataList = $buffer->result(implode(':', array_values($identifier)));
 
 					// Process the data results and return a pagination result list.
 					// Result list contains a list of GraphEntities to be traversed
@@ -188,18 +202,27 @@ class DoctrineToMany implements IGraphQLResolver {
 		// Query name
 		$mappedBy	= $this->association['mappedBy'];
 
-		$association = $type->getAssociationMapping($mappedBy);
+		if($mappedBy === null){
+			$mappedBy = $this->association['inversedBy'];
+		}
 
-		// Target entity's association column
-		$columnName = $association['joinColumns'][0]['name'];
+		if($this->association['isOwningSide']){
+			//$association = $type->getAssociationMapping($mappedBy);
+			$association = $type->getAssociationMapping($this->association['inversedBy']);
+		}else{
+			$association = $this->association;
+		}
+
 
 		// Get the target identifiers, will need them for order and pagination
 		$targetIdentifiers = $this->typeProvider->getTypeIdentifiers($association['targetEntity']);
+		$sourceIdentifiers = $this->typeProvider->getTypeIdentifiers($association['sourceEntity']);
+
 
 		$entityType = $this->entityType;
 
 		// Fetch the buffer associated with this type
-		$buffer 	  = $this->typeProvider->initBuffer(DoctrineDeferredBuffer::class, $entityType);
+		$buffer = $this->typeProvider->initBuffer(DoctrineDeferredBuffer::class, $entityType);
 
 		// Have we already loaded to data, if not proceed
 		if(!$buffer->isLoaded()) {
@@ -207,12 +230,78 @@ class DoctrineToMany implements IGraphQLResolver {
 			// Create a query using the arguments passed in the query
 			$queryBuilder = $entityType::getRepository()->createQueryBuilder('e');
 
-			$queryBuilder->andWhere($queryBuilder->expr()->in('e.' . $mappedBy, ':' . $mappedBy));
-			$queryBuilder->setParameter($mappedBy, $buffer->get());
+			if (isset($association['joinColumns'])) {
+
+				$joinCount = 0;
+
+				foreach ($association['joinColumns'] as $col) {
+
+					$alias = 'e' . $joinCount;
+					$queryBuilder->addSelect($alias)->leftJoin('e.' . $mappedBy, $alias);
+
+					$parentIds = $buffer->get();
+
+					foreach ($parentIds as $parentId) {
+
+						foreach ($targetIdentifiers as $id) {
+							$queryBuilder->andWhere($queryBuilder->expr()->in($alias . '.' . $id, ':' . $id));
+							$queryBuilder->setParameter($id, $parentId[$id]);
+						}
+
+					}
+
+					$joinCount++;
+
+				}
+
+				$identifiers = $this->typeProvider->getTypeIdentifiers($this->entityType);
+
+			}else if(isset($association['joinTable'])) {
+
+				$joinCount = 0;
+
+				$alias = 'e' . $joinCount;
+				$queryBuilder->addSelect($alias)->leftJoin('e.' . $mappedBy, $alias);
+
+				$parentIds = $buffer->get();
+
+				$idField = null;
+
+				if($this->association['isOwningSide']) {
+					if (count($targetIdentifiers) > 1) {
+						$idField = 'id';
+					} else {
+						$idField = $targetIdentifiers[0];
+					}
+				}else{
+					if (count($sourceIdentifiers) > 1) {
+						$idField = 'id';
+					} else {
+						$idField = $sourceIdentifiers[0];
+					}
+				}
+
+				$queryBuilder->andWhere($queryBuilder->expr()->in($alias . '.' . $idField, ':id' ));
+				$queryBuilder->setParameter('id', $parentIds);
+
+				$joinCount++;
+
+				$identifiers = $this->typeProvider->getTypeIdentifiers($this->entityType);
+
+			}else {
+
+				$parentIds = $buffer->get();
+
+				$queryBuilder->andWhere($queryBuilder->expr()->in('e.' . $mappedBy, ':' . $mappedBy));
+				$queryBuilder->setParameter($mappedBy, $parentIds);
+
+				$identifiers = $this->typeProvider->getTypeIdentifiers($this->entityType);
+
+			}
 
 			// Add pagination DQL clauses to the query. In this case we'll
 			// only be adding the order by statement
-			$args = GraphPageInfo::paginateQuery($queryBuilder, $targetIdentifiers, $args);
+			$args = GraphPageInfo::paginateQuery($queryBuilder, $identifiers, $args);
 
 			// Add additional where statements based on passed arguments.
 			foreach ($args as $name => $values) {
@@ -234,13 +323,83 @@ class DoctrineToMany implements IGraphQLResolver {
 			// Group the results by the parent entity
 			foreach ($results as $result) {
 
-				// TODO: needs to support composite identifiers
-				$parentId = $result[$columnName];
+				$parents = null;
 
-				if (!isset($resultsLoaded[$parentId]))
-					$resultsLoaded[$parentId] = array();
+				if(isset($result[$mappedBy])){
 
-				array_push($resultsLoaded[$parentId], $result);
+					$parents = $result[$mappedBy];
+
+				}else {
+
+					if ($type->isAssociationWithSingleJoinColumn($mappedBy)){
+						$columnName = $type->getSingleAssociationJoinColumnName($mappedBy);
+						$parents = $result[$columnName];
+					}
+
+				}
+
+				if($parents !== null){
+
+					// Parents can be a single or multiple records
+					if($association['type'] === ClassMetadataInfo::MANY_TO_ONE || $association['type'] === ClassMetadataInfo::ONE_TO_ONE){
+
+						$identifierValues = [];
+
+						foreach ($targetIdentifiers as $identifier) {
+							array_push($identifierValues, $parents[$identifier]);
+						}
+
+						$parentId = implode(':', $identifierValues);
+
+						if (!isset($resultsLoaded[$parentId]))
+							$resultsLoaded[$parentId] = array();
+
+						array_push($resultsLoaded[$parentId], $result);
+
+					}else{
+
+						// Many to many relationships will generate arrays
+						if(is_array($parents)){
+
+							foreach($parents as $parent) {
+
+								$identifierValues = [];
+
+								if($this->association['isOwningSide']) {
+									foreach ($targetIdentifiers as $identifier) {
+										array_push($identifierValues, $parent[$identifier]);
+									}
+								}else{
+									foreach ($sourceIdentifiers as $identifier) {
+										array_push($identifierValues, $parent[$identifier]);
+									}
+								}
+
+								$parentId = implode(':', $identifierValues);
+
+								if (!isset($resultsLoaded[$parentId]))
+									$resultsLoaded[$parentId] = array();
+
+								array_push($resultsLoaded[$parentId], $result);
+
+							}
+
+						// One to many will generate a single value
+						}else{
+
+							$parentId = $parents;
+
+							if (!isset($resultsLoaded[$parentId]))
+								$resultsLoaded[$parentId] = array();
+
+							array_push($resultsLoaded[$parentId], $result);
+
+						}
+
+
+					}
+
+				}
 
 			}
 
@@ -267,6 +426,9 @@ class DoctrineToMany implements IGraphQLResolver {
 		// Query name
 		$mappedBy	= $this->association['mappedBy'];
 
+		if(!$mappedBy)
+			$mappedBy = $this->association['inversedBy'];
+
 		$association = $type->getAssociationMapping($mappedBy);
 
 		// Target entity's association column
@@ -292,11 +454,43 @@ class DoctrineToMany implements IGraphQLResolver {
 				// Create a query using the arguments passed in the query
 				$queryBuilder = $entityType::getRepository()->createQueryBuilder('e');
 
-				$queryBuilder->andWhere($queryBuilder->expr()->eq('e.' . $mappedBy, ':' . $mappedBy));
-				$queryBuilder->setParameter($mappedBy, $parentId);
+				if (isset($association['joinColumns'])) {
+
+					$joinCount = 0;
+
+					foreach ($association['joinColumns'] as $col) {
+
+						$targetTable = $association['targetEntity'];
+
+						$alias = 'e' . $joinCount;
+						$queryBuilder->addSelect($alias)->leftJoin('e.' . $mappedBy, $alias);
+
+						$identifiers = $buffer->get();
+
+						foreach($identifiers as $identifier){
+
+							foreach($targetIdentifiers as $id) {
+								$queryBuilder->andWhere($queryBuilder->expr()->in($alias . '.' . $id, ':' . $id));
+								$queryBuilder->setParameter($id, $identifier[$id]);
+							}
+
+						}
+
+						$joinCount++;
+
+					}
+
+					$identifiers = $this->typeProvider->getTypeIdentifiers($this->entityType);
+
+				}else {
+
+					$queryBuilder->andWhere($queryBuilder->expr()->eq('e.' . $mappedBy, ':' . $mappedBy));
+					$queryBuilder->setParameter($mappedBy, $parentId);
+
+				}
 
 				// Add limit and order DQL statements
-				$filteredArgs = GraphPageInfo::paginateQuery($queryBuilder, $targetIdentifiers, $args);
+				$filteredArgs = GraphPageInfo::paginateQuery($queryBuilder, $identifiers, $args);
 
 				// Add additional where clauses based on query arguments
 				foreach ($filteredArgs as $name => $values) {
@@ -313,7 +507,9 @@ class DoctrineToMany implements IGraphQLResolver {
 				// Use array hydration only. GraphHydrator will handle hydration of doctrine objects.
 				$results = $query->getResult(Query::HYDRATE_ARRAY);
 
-				$resultsLoaded[$parentId] = $results;
+				$parentIdString = implode(':', array_values($parentId));
+
+				$resultsLoaded[$parentIdString] = $results;
 
 			}
 

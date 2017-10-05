@@ -97,40 +97,49 @@ class DoctrineToOne implements IGraphQLResolver {
 
 				$targetToSource = $this->association['sourceToTargetKeyColumns'];
 
-				$sourceColumn = array_keys($targetToSource)[0];
+				$sourceColumn = $this->association['fieldName'];
+
+				if($targetToSource != null)
+					$sourceColumn = array_keys($targetToSource)[0];
 
 				// Get the refenced it without triggering the doctrine auto hydration
 				// This is why we need the GraphEntity to act as a proxy.
 				$identifier = (is_object($parent) ? $parent->getDataValue($sourceColumn) : $parent[$sourceColumn]);
 
-				// Initialize the buffer, if initialized use the existing one
-				$buffer = $this->typeProvider->initBuffer(DoctrineDeferredBuffer::class, $this->entityType);
+				if($identifier != null) {
 
-				$buffer->add($identifier);
+					// Initialize the buffer, if initialized use the existing one
+					$buffer = $this->typeProvider->initBuffer(DoctrineDeferredBuffer::class, $this->entityType);
 
-				// GraphQLPHP will call the deferred resolvers as needed.
-				return new \GraphQL\Deferred(function () use ($buffer, $identifier, $args) {
+					$buffer->add($identifier);
 
-					// Populate the buffer with the loaded data
-					$this->loadBuffered($args, $identifier);
+					// GraphQLPHP will call the deferred resolvers as needed.
+					return new \GraphQL\Deferred(function() use ($buffer, $identifier, $args) {
 
-					$em = $this->typeProvider->getManager();
+						// Populate the buffer with the loaded data
+						$this->loadBuffered($args, $identifier);
 
-					$graphHydrator = new GraphHydrator($em);
+						$em = $this->typeProvider->getManager();
 
-					$result = null;
+						$graphHydrator = new GraphHydrator($em);
 
-					// Retrieve the result from the buffer
-					$data = $buffer->result($identifier);
+						$result = null;
 
-					// Create a GraphEntity and Hydrate the doctrine object
-					if($data !== null)
-						$result = $graphHydrator->hydrate($data, $this->entityType);
+						// Retrieve the result from the buffer
+						$data = $buffer->result($identifier);
 
-					// Return the GraphEntity
-					return $result;
+						// Create a GraphEntity and Hydrate the doctrine object
+						if ($data !== null)
+							$result = $graphHydrator->hydrate($data, $this->entityType);
 
-				});
+						// Return the GraphEntity
+						return $result;
+
+					});
+
+				}
+
+				return null;
 
 			}
 
