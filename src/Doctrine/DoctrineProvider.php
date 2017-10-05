@@ -720,7 +720,7 @@ class DoctrineProvider Implements IGraphQLProvider {
 
 	private function hasParentClasses($entityMetaType){
 
-	    return !(count($entityMetaType->parentClases) === 0);
+	    return !(count($entityMetaType->parentClasses) === 0);
 
     }
 
