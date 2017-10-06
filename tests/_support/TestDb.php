@@ -11,7 +11,7 @@ class TestDb
     public static function createEntityManager($path){
 
         $paths = array($path);
-        $isDevMode = false;
+        $isDevMode = true;
 
         // the connection configuration
         $dbParams = array(
@@ -22,7 +22,13 @@ class TestDb
             'host'     => 'localhost'
         );
 
+        $arrayCache = new \Doctrine\Common\Cache\ArrayCache;
+
         $config = Setup::createAnnotationMetadataConfiguration($paths, $isDevMode);
+
+        $config->setQueryCacheImpl($arrayCache);
+        $config->setResultCacheImpl($arrayCache);
+        $config->setMetadataCacheImpl($arrayCache);
 
         $entityManager = EntityManager::create($dbParams, $config);
 

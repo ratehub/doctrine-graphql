@@ -1,5 +1,7 @@
 <?php
 
+namespace DoctrineGraph\Schema\GQL001;
+
 /**
  * @Entity
  * @Table
@@ -10,20 +12,14 @@
  */
 class GQL001_Project {
 
-	/** @Id @Column(type="integer")
+	/** @Id @Column(type="integer") @GeneratedValue
 	 *	@GraphQLProperty(
 	 * 		include=true)
 	 */
 	public $id;
 
-	/** @Column(type="integer")
-	 *	@GraphQLProperty(
-	 * 		include=true)
-	 */
-	public $user_id;
-
-	/** @Column(type="integer")
-	 *	@GraphQLProperty(
+    /** @OneToOne(targetEntity="GQL001_User")
+	 *  @GraphQLProperty(
 	 * 		include=true)
 	 */
 	public $user;

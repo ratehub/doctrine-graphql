@@ -70,7 +70,8 @@ class GraphHydrator {
 		// Create the doctrine entity and initialize
 		$entity = $this->newInstance($instanceType);
 
-		$entity->__init();
+        if(method_exists($entity, '__init'))
+		    $entity->__init();
 
 		// Populate the fields with the data
 		foreach ($data as $field => $value) {

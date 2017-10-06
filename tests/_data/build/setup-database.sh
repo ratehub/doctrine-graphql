@@ -4,6 +4,7 @@ psql -U postgres << EOF
         create database testdb with owner testuser;
         grant all privileges on database testdb to testuser;
         \c testdb;
+        CREATE EXTENSION hstore;
 EOF
 
 export PGPASSWORD='aeqeacadq'

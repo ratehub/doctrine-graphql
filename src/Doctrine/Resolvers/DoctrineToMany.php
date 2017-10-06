@@ -85,7 +85,7 @@ class DoctrineToMany implements IGraphQLResolver {
 		$outputType = $this->getOutputType();
 
 		foreach(GraphPageInfo::getFilters() as $filter){
-			$args[$filter->name] = array('name' => $filter['name'], 'type' => $filter['type']);
+			$args[$filter['name']] = array('name' => $filter['name'], 'type' => $filter['type']);
 		}
 
 		// Generate the argument definition based on the filter type.
@@ -108,7 +108,7 @@ class DoctrineToMany implements IGraphQLResolver {
 				$identifier = null;
 
 				if(is_object($parent)){
-					$identifierFields = $this->typeProvider->getTypeIdentifiers($parent->getObject()->className);
+					$identifierFields = $this->typeProvider->getTypeIdentifiers(get_class($parent->getObject()));
 				}else{
 					$identifierFields = ['id'];
 				}
@@ -228,7 +228,7 @@ class DoctrineToMany implements IGraphQLResolver {
 		if(!$buffer->isLoaded()) {
 
 			// Create a query using the arguments passed in the query
-			$queryBuilder = $entityType::getRepository()->createQueryBuilder('e');
+			$queryBuilder = $this->typeProvider->getRepository($entityType)->createQueryBuilder('e');
 
 			if (isset($association['joinColumns'])) {
 
@@ -452,7 +452,7 @@ class DoctrineToMany implements IGraphQLResolver {
 			foreach($buffer->get() as $parentId){
 
 				// Create a query using the arguments passed in the query
-				$queryBuilder = $entityType::getRepository()->createQueryBuilder('e');
+				$queryBuilder = $this->typeProvider->getRepository(entityType)->createQueryBuilder('e');
 
 				if (isset($association['joinColumns'])) {
 

@@ -650,6 +650,8 @@ class DoctrineProvider Implements IGraphQLProvider {
 
             $interfaceConfig = $config;
 
+            $interfaceKey = $name . '__interface';
+
             $interfaceConfig['name'] = $interfaceConfig['name'] . '__interface';
 
             $interfaceConfig['resolveType'] = function($value) use ($entityMetaType){
@@ -666,9 +668,9 @@ class DoctrineProvider Implements IGraphQLProvider {
             };
 
             // Instantiate the interface
-            $this->_types[$interfaceConfig['name']] = new InterfaceType($interfaceConfig);
+            $this->_types[$interfaceKey] = new InterfaceType($interfaceConfig);
 
-            array_push($interfaces, $this->getType($interfaceConfig['name']));
+            array_push($interfaces, $this->getType($interfaceKey));
 
             $config['interfaces'] = $interfaces;
 
@@ -971,5 +973,13 @@ class DoctrineProvider Implements IGraphQLProvider {
 		return new Permission();
 
 	}
+
+    public function getRepository($class) {
+        return $this->_em->getRepository($class);
+    }
+
+    public function clearBuffers(){
+       $this->_dataBuffers = array();
+    }
 
 }

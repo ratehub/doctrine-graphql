@@ -165,7 +165,7 @@ class DoctrineToOne implements IGraphQLResolver {
 		if(!$buffer->isLoaded()) {
 
 			// Create a query using the arguments passed in the query
-			$queryBuilder = $entityType::getRepository()->createQueryBuilder('e');
+			$queryBuilder = $this->typeProvider->getRepository($entityType)->createQueryBuilder('e');
 
 			$queryBuilder->andWhere($queryBuilder->expr()->in('e.' . $mappedBy, ':' . $mappedBy));
 			$queryBuilder->setParameter($mappedBy, $buffer->get());

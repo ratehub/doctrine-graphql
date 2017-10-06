@@ -73,7 +73,9 @@ class DoctrineDeferredBuffer {
 	 */
 	public function result($id){
 
-		return $this->results[$id];
+	    if(isset($this->results[$id]))
+		    return $this->results[$id];
+	    return null;
 
 	}
 
