@@ -533,7 +533,7 @@ class DoctrineToMany implements IGraphQLResolver {
 		$pageInfoType 	= $this->typeProvider->getType(GraphPageInfo::NAME);
 
 		// Define the name
-		$outputTypeName = $this->name . '__List';
+		$outputTypeName = $listType->name . '__List';
 
 		// Multiple associations can be related to the same object resulting
 		// in the same output type. Only need one instance instantiated.
