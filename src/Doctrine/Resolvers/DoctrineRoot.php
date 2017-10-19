@@ -39,7 +39,7 @@ class DoctrineRoot implements IGraphQLResolver {
 	/**
 	 * @var String	The entity type defined as the full class name.
 	 */
-	private $entityType 	= null;
+	private $doctrineClass 	= null;
 
 	/**
 	 * @var	DoctrineProvider	Instance of the doctrine provider that instantiated this resolver.
@@ -53,13 +53,13 @@ class DoctrineRoot implements IGraphQLResolver {
 	 * @param $typeKey			The Entities class name for the entity
 	 * @param $type				The GraphQL output type for this query
 	 */
-	public function __construct($typeProvider, $typeKey, $type){
+	public function __construct($typeProvider, $doctrineClass, $graphType){
 
-		$this->type			= $type;
-		$this->name 		= $type->name;
-		$this->description 	= $type->description;
-		$this->entityType	= $typeKey;
-		$this->typeProvider = $typeProvider;
+		$this->type				= $graphType;
+		$this->name 			= $graphType->name;
+		$this->description 		= $graphType->description;
+		$this->doctrineClass	= $doctrineClass;
+		$this->typeProvider 	= $typeProvider;
 
 	}
 
@@ -71,7 +71,7 @@ class DoctrineRoot implements IGraphQLResolver {
 	public function getDefinition(){
 
 		// Resolve the type with the provider
-		$inputType = $this->typeProvider->getQueryFilterType($this->entityType);
+		$inputType = $this->typeProvider->getQueryFilterType($this->name);
 
 		$outputType = $this->getOutputType();
 
@@ -102,12 +102,12 @@ class DoctrineRoot implements IGraphQLResolver {
 				$config->addCustomStringFunction('JSON_PATH_EQUALS', 'App\Api\GraphQL\Doctrine\JsonPathEquals');
 
 				// Create a query using the arguments passed in the query
-				$qb = $em->getRepository($this->entityType)->createQueryBuilder('e');
+				$qb = $em->getRepository($this->doctrineClass)->createQueryBuilder('e');
 
-				$inputType = $this->typeProvider->getQueryFilterType($this->entityType);
+				$inputType = $this->typeProvider->getQueryFilterType($this->name);
 
 				// Retrieve the identifiers to be used for pagination
-				$identifiers = $this->typeProvider->getTypeIdentifiers($this->entityType);
+				$identifiers = $this->typeProvider->getTypeIdentifiers($this->name);
 
 				// Add the appropriate DQL clauses required for pagination based
 				// on the supplied args. Args get removed once used.
@@ -160,7 +160,7 @@ class DoctrineRoot implements IGraphQLResolver {
 				// Process the data results and return a pagination result list.
 				// Result list contains a list of GraphEntities to be traversed
 				// during resolve operations
-				$resultList = new GraphResultList($dataList, $args, $graphHydrator, $this->typeProvider, $this->entityType);
+				$resultList = new GraphResultList($dataList, $args, $graphHydrator, $this->typeProvider, $this->doctrineClass, $this->name);
 
 				return $resultList;
 

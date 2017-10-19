@@ -189,13 +189,13 @@ class DoctrineProviderCest
 
         $I->assertEquals(11, count($types));
 
-        $userType = $provider->getType('DoctrineGraph\Schema\GQL001\GQL001_User');
+        $userType = $provider->getType('User');
 
         $I->assertNotNull($userType);
         $I->assertEquals("User", $userType->name); // Test the name annotation property
 		$I->assertEquals("A User", $userType->description); // Test the description annotation property
 
-        $projectType = $provider->getType('DoctrineGraph\Schema\GQL001\GQL001_Project');
+        $projectType = $provider->getType('Project');
 
         $I->assertNotNull($projectType);
 		$I->assertEquals("Project", $projectType->name); // Test the name annotation property

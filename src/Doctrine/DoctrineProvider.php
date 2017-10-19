@@ -102,6 +102,16 @@ class DoctrineProvider Implements IGraphQLProvider {
 	private $_types = array();
 
 	/**
+	 * @var array    Associative array of graphql type names to doctrine entity classes
+	 */
+	private $_typeClass = array();
+
+	/**
+	 * @var array	Mapping of a doctrine class to the final resolved name
+	 */
+	private $_doctrineToName = array();
+
+	/**
 	 * @var array    Associative array of input types. Input types are used for create, update, delete operations
 	 */
 	private $_inputTypes = array();
@@ -196,14 +206,10 @@ class DoctrineProvider Implements IGraphQLProvider {
 
 			$permissions = $this->initPermissions($annotation);
 
-			$this->_permissionsByType[$metaType->getName()] = $permissions;
-
 			// Run the type through the whitelist/blacklist filter
 			if($permissions->hasAccess()) {
 
-				$this->_doctrineMetadata[$metaType->getName()] = $metaType;
-
-				$this->initializeObjectType($metaType, $annotation);
+				$this->initializeObjectType($metaType, $annotation, $permissions);
 
 			}
 
@@ -332,26 +338,34 @@ class DoctrineProvider Implements IGraphQLProvider {
 	 * @param $entityMetaType
 	 * @param $annotation
 	 */
-	private function initializeObjectType($entityMetaType, $annotation) {
+	private function initializeObjectType($entityMetaType, $annotation, $permissions) {
 
 		// Type definition
 		$config = array();
 
-		$name = $entityMetaType->getName();
+		$doctrineClass = $entityMetaType->getName();
+		$name = str_replace('\\', '__', $doctrineClass);
+
+		// Set the name via annotation if an override is set
+		if($annotation !== null && $annotation->name !== null) {
+			$name = $annotation->name;
+		}
+
+		// Setup some core data
+		$this->_permissionsByType[$name] 	= $permissions;
+		$this->_doctrineMetadata[$name]		= $entityMetaType;
+		$this->_typeClass[$name] 			= $doctrineClass;
+
+		$this->storeTypeName($doctrineClass, $name);
 
 		// If we've already defined this type then move on
 		if (isset($this->_types[$name]))
 			return;
 
+		$config['name'] = $name;
+
 		// Store the identifier fields for convenience later
 		$this->_identifierFields[$name] = $entityMetaType->getIdentifier();
-
-		// Set the name via annotation or use the default
-		if($annotation !== null && $annotation->name !== null) {
-			$config['name'] = $annotation->name;
-		}else {
-			$config['name'] = str_replace('\\', '__', $name); // GraphQL Spec requires [A-Za-z0-9_-]
-		}
 
 		// Set the description via the annotation if set.
 		if($annotation !== null && $annotation->description !== null) {
@@ -582,10 +596,11 @@ class DoctrineProvider Implements IGraphQLProvider {
 				// Check to see if this property should be included
 				if($propertyPermissions->hasAccess()) {
 
-					$entityType = $association['targetEntity'];
+					$doctrineClass = $association['targetEntity'];
+					$graphName	   = $this->getTypeName($doctrineClass);
 
 					// Only include this field if the "target entity" has also passed the inclusion filter.
-					if (isset($this->_doctrineMetadata[$entityType])) {
+					if (isset($this->_doctrineMetadata[$graphName])) {
 
 						$fieldDescription 	= null;
 						$resolver 			= null;
@@ -597,33 +612,11 @@ class DoctrineProvider Implements IGraphQLProvider {
 						// Determine the association type and instantiate the appropriate default resolver
 						if ($association['type'] === ClassMetadataInfo::ONE_TO_ONE || $association['type'] === ClassMetadataInfo::MANY_TO_ONE){
 
-								$resolver = new DoctrineToOne($this, $fieldName, $fieldDescription, $entityType, $association);
+							$resolver = new DoctrineToOne($this, $fieldName, $fieldDescription, $doctrineClass, $graphName, $association);
 
 						} else {
 
-								$resolver = new DoctrineToMany($this, $fieldName, $fieldDescription, $entityType, $association);
-
-						//	}else{
-
-/*								$mappedBy = $association['mappedBy'];
-
-								if($mappedBy !== null){
-
-									$resolver = new DoctrineToMany($this, $fieldName, $fieldDescription, $entityType, $association);
-
-								}else{
-
-									$inversedBy = $association['inversedBy'];
-
-									$entityType = $this->getDoctrineType($association['targetEntity']);
-
-									$association = $entityType->getAssociationMapping($inversedBy);
-
-									$resolver = new DoctrineToMany($this, $fieldName, $fieldDescription, $entityType, $association);
-
-								}
-
-							} */
+							$resolver = new DoctrineToMany($this, $fieldName, $fieldDescription, $doctrineClass, $graphName, $association);
 
 						}
 
@@ -650,9 +643,9 @@ class DoctrineProvider Implements IGraphQLProvider {
 
             $interfaceConfig = $config;
 
-            $interfaceKey = $name . '__interface';
+            $interfaceKey = $name . '__Interface';
 
-            $interfaceConfig['name'] = $interfaceConfig['name'] . '__interface';
+            $interfaceConfig['name'] = $interfaceConfig['name'] . '__Interface';
 
             $interfaceConfig['resolveType'] = function($value) use ($entityMetaType){
 
@@ -663,7 +656,7 @@ class DoctrineProvider Implements IGraphQLProvider {
                 // Based on the discriminator column get the class name
                 $instanceType = $entityMetaType->discriminatorMap[$type];
 
-                return $this->getType($instanceType);
+                return $this->getType($this->getTypeName($instanceType));
 
             };
 
@@ -680,7 +673,10 @@ class DoctrineProvider Implements IGraphQLProvider {
         if($this->hasParentClasses($entityMetaType)){
 
             foreach($entityMetaType->parentClasses as $parent){
-                array_push($interfaces, $this->getType($parent . '__interface'));
+
+            	$parentName = $this->getTypeName($parent);
+
+                array_push($interfaces, $this->getType($parentName . '__Interface'));
             }
 
             if(count($interfaces) > 0)
@@ -981,5 +977,23 @@ class DoctrineProvider Implements IGraphQLProvider {
     public function clearBuffers(){
        $this->_dataBuffers = array();
     }
+
+    public function getTypeName($className){
+
+    	$key = str_replace('\\', '__', $className);
+
+		return $this->_doctrineToName[$key];
+
+	}
+
+	public function storeTypeName($className, $name){
+    	$key = str_replace('\\', '__', $className);
+
+    	$this->_doctrineToName[$key] = $name;
+	}
+
+	public function getTypeClass($graphName){
+		return $this->_typeClass[$graphName];
+	}
 
 }

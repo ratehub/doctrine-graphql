@@ -35,9 +35,16 @@ class DoctrineToOne implements IGraphQLResolver {
 	private $description;
 
 	/**
-	 * @var String	The entity type defined as the full class name.
+	 * @var String	The doctrine type defined as the full class name for the target
+	 * type.
 	 */
-	private $entityType;
+	private $doctrineClass;
+
+	/**
+	 * @var String the name of the type as defined in graphql. This is also the key
+	 * for any mappings done by the DoctrineProvider
+	 */
+	private $graphName;
 
 	/**
 	 * @var Array	The doctrine association object that defines the relationship
@@ -50,6 +57,11 @@ class DoctrineToOne implements IGraphQLResolver {
 	private $typeProvider;
 
 	/**
+	 * @var string The key that is used for storing the buffer.
+	 */
+	private $bufferKey;
+
+	/**
 	 * DoctrineToOne constructor.
 	 * @param $provider 		Instance of the doctrine provider
 	 * @param $name				Field name for the relationship as it should be output in GraphQL
@@ -57,13 +69,16 @@ class DoctrineToOne implements IGraphQLResolver {
 	 * @param $entityType		Class name for the entity
 	 * @param $association		Doctrine Association object
 	 */
-	public function __construct($provider, $name, $description, $entityType, $association){
+	public function __construct($provider, $name, $description, $doctrineClass, $graphName,  $association){
 
-		$this->name 		= $name;
-		$this->description 	= $description;
-		$this->entityType	= $entityType;
-		$this->association 	= $association;
-		$this->typeProvider = $provider;
+		$this->name 			= $name;
+		$this->description 		= $description;
+		$this->doctrineClass	= $doctrineClass;
+		$this->graphName		= $graphName;
+		$this->association 		= $association;
+		$this->typeProvider 	= $provider;
+
+		$this->bufferKey = $this->graphName . '.' . $this->name;
 
 	}
 
@@ -75,8 +90,8 @@ class DoctrineToOne implements IGraphQLResolver {
 	public function getDefinition(){
 
 		// Resolve the types with the provider
-		$outputType = $this->typeProvider->getType($this->entityType);
-		$filterType = $this->typeProvider->getFilterType($this->entityType);
+		$outputType = $this->typeProvider->getType($this->graphName);
+		$filterType = $this->typeProvider->getFilterType($this->graphName);
 
 		$args = array();
 
@@ -109,7 +124,7 @@ class DoctrineToOne implements IGraphQLResolver {
 				if($identifier != null) {
 
 					// Initialize the buffer, if initialized use the existing one
-					$buffer = $this->typeProvider->initBuffer(DoctrineDeferredBuffer::class, $this->entityType);
+					$buffer = $this->typeProvider->initBuffer(DoctrineDeferredBuffer::class, $this->bufferKey);
 
 					$buffer->add($identifier);
 
@@ -130,7 +145,7 @@ class DoctrineToOne implements IGraphQLResolver {
 
 						// Create a GraphEntity and Hydrate the doctrine object
 						if ($data !== null)
-							$result = $graphHydrator->hydrate($data, $this->entityType);
+							$result = $graphHydrator->hydrate($data, $this->doctrineClass);
 
 						// Return the GraphEntity
 						return $result;
@@ -156,16 +171,14 @@ class DoctrineToOne implements IGraphQLResolver {
 
 		$mappedBy	= $this->association['joinColumns'][0]['referencedColumnName'];
 
-		$entityType = $this->entityType;
-
 		// Fetch the buffer associated with this type
-		$buffer 	  = $this->typeProvider->initBuffer(DoctrineDeferredBuffer::class, $entityType);
+		$buffer 	  = $this->typeProvider->initBuffer(DoctrineDeferredBuffer::class, $this->bufferKey);
 
 		// Have we already loaded to data, if not proceed
 		if(!$buffer->isLoaded()) {
 
 			// Create a query using the arguments passed in the query
-			$queryBuilder = $this->typeProvider->getRepository($entityType)->createQueryBuilder('e');
+			$queryBuilder = $this->typeProvider->getRepository($this->doctrineClass)->createQueryBuilder('e');
 
 			$queryBuilder->andWhere($queryBuilder->expr()->in('e.' . $mappedBy, ':' . $mappedBy));
 			$queryBuilder->setParameter($mappedBy, $buffer->get());

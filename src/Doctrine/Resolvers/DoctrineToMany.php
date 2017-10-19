@@ -38,9 +38,16 @@ class DoctrineToMany implements IGraphQLResolver {
 	private $description;
 
 	/**
-	 * @var String	The entity type defined as the full class name.
+	 * @var String	The doctrine type defined as the full class name for the target
+	 * type.
 	 */
-	private $entityType;
+	private $doctrineClass;
+
+	/**
+	 * @var String the name of the type as defined in graphql. This is also the key
+	 * for any mappings done by the DoctrineProvider
+	 */
+	private $graphName;
 
 	/**
 	 * @var Array	The doctrine association object that defines the relationship
@@ -53,6 +60,12 @@ class DoctrineToMany implements IGraphQLResolver {
 	private $typeProvider;
 
 	/**
+	 * @var string 	the key that is used when registering the buffer with the type provider
+	 */
+	private $bufferKey;
+
+
+	/**
 	 * DoctrineToMany constructor.
 	 * @param $provider 		Instance of the doctrine provider
 	 * @param $name				Field name for the relationship as it should be output in GraphQL
@@ -60,14 +73,16 @@ class DoctrineToMany implements IGraphQLResolver {
 	 * @param $entityType		Class name for the entity
 	 * @param $association		Doctrine Association object
 	 */
-	public function __construct($provider, $name, $description, $entityType, $association){
+	public function __construct($provider, $name, $description, $doctrineClass, $graphName, $association){
 
-		$this->name 		= $name;
-		$this->description 	= $description;
-		$this->entityType	= $entityType;
-		$this->association 	= $association;
-		$this->typeProvider = $provider;
+		$this->name 			= $name;
+		$this->description 		= $description;
+		$this->doctrineClass	= $doctrineClass;
+		$this->graphName		= $graphName;
+		$this->association 		= $association;
+		$this->typeProvider 	= $provider;
 
+		$this->bufferKey = $graphName . '.' . $association['fieldName'];
 	}
 
 	/**
@@ -78,7 +93,7 @@ class DoctrineToMany implements IGraphQLResolver {
 	public function getDefinition(){
 
 		// Resolve the types with the provider
-		$filterType 	= $this->typeProvider->getFilterType($this->entityType);
+		$filterType 	= $this->typeProvider->getFilterType($this->graphName);
 
 		$args = array();
 
@@ -108,7 +123,8 @@ class DoctrineToMany implements IGraphQLResolver {
 				$identifier = null;
 
 				if(is_object($parent)){
-					$identifierFields = $this->typeProvider->getTypeIdentifiers(get_class($parent->getObject()));
+					$parentTypeName = $this->typeProvider->getTypeName(get_class($parent->getObject()));
+					$identifierFields = $this->typeProvider->getTypeIdentifiers($parentTypeName);
 				}else{
 					$identifierFields = ['id'];
 				}
@@ -120,11 +136,11 @@ class DoctrineToMany implements IGraphQLResolver {
 				}
 
 				// Initialize the buffer, if initialized use the existing one
-				$buffer = $this->typeProvider->initBuffer(DoctrineDeferredBuffer::class, $this->entityType);
+				$buffer = $this->typeProvider->initBuffer(DoctrineDeferredBuffer::class, $this->bufferKey);
 
 				// Need to defer execution. Add parent ids so that we can query
 				// all at once instead of per record
-				$buffer->add($identifier);
+				$buffer->add(implode(':', array_values($identifier)));
 
 				// GraphQLPHP will call the deferred resolvers as needed.
 				return new \GraphQL\Deferred(function () use ($buffer, $identifier, $args) {
@@ -161,7 +177,7 @@ class DoctrineToMany implements IGraphQLResolver {
 					// Process the data results and return a pagination result list.
 					// Result list contains a list of GraphEntities to be traversed
 					// during resolve operations
-					$resultList = new GraphResultList($dataList, $args, $graphHydrator, $this->typeProvider, $this->entityType);
+					$resultList = new GraphResultList($dataList, $args, $graphHydrator, $this->typeProvider, $this->doctrineClass, $this->graphName);
 
 					return $resultList;
 
@@ -197,7 +213,7 @@ class DoctrineToMany implements IGraphQLResolver {
 	public function loadBufferedInBulk($args, $identifier){
 
 		// Fetch the buffer associated with this type
-		$type = $this->typeProvider->_doctrineMetadata[$this->entityType];
+		$type = $this->typeProvider->_doctrineMetadata[$this->graphName];
 
 		// Query name
 		$mappedBy	= $this->association['mappedBy'];
@@ -215,20 +231,20 @@ class DoctrineToMany implements IGraphQLResolver {
 
 
 		// Get the target identifiers, will need them for order and pagination
-		$targetIdentifiers = $this->typeProvider->getTypeIdentifiers($association['targetEntity']);
-		$sourceIdentifiers = $this->typeProvider->getTypeIdentifiers($association['sourceEntity']);
+		$targetIdentifiers = $this->typeProvider->getTypeIdentifiers($this->typeProvider->getTypeName($association['targetEntity']));
+		$sourceIdentifiers = $this->typeProvider->getTypeIdentifiers($this->typeProvider->getTypeName($association['sourceEntity']));
 
 
-		$entityType = $this->entityType;
+		$graphName = $this->graphName;
 
 		// Fetch the buffer associated with this type
-		$buffer = $this->typeProvider->initBuffer(DoctrineDeferredBuffer::class, $entityType);
+		$buffer = $this->typeProvider->initBuffer(DoctrineDeferredBuffer::class, $this->bufferKey);
 
 		// Have we already loaded to data, if not proceed
 		if(!$buffer->isLoaded()) {
 
 			// Create a query using the arguments passed in the query
-			$queryBuilder = $this->typeProvider->getRepository($entityType)->createQueryBuilder('e');
+			$queryBuilder = $this->typeProvider->getRepository($this->doctrineClass)->createQueryBuilder('e');
 
 			if (isset($association['joinColumns'])) {
 
@@ -254,7 +270,7 @@ class DoctrineToMany implements IGraphQLResolver {
 
 				}
 
-				$identifiers = $this->typeProvider->getTypeIdentifiers($this->entityType);
+				$identifiers = $this->typeProvider->getTypeIdentifiers($this->graphName);
 
 			}else if(isset($association['joinTable'])) {
 
@@ -286,7 +302,7 @@ class DoctrineToMany implements IGraphQLResolver {
 
 				$joinCount++;
 
-				$identifiers = $this->typeProvider->getTypeIdentifiers($this->entityType);
+				$identifiers = $this->typeProvider->getTypeIdentifiers($this->graphName);
 
 			}else {
 
@@ -295,7 +311,7 @@ class DoctrineToMany implements IGraphQLResolver {
 				$queryBuilder->andWhere($queryBuilder->expr()->in('e.' . $mappedBy, ':' . $mappedBy));
 				$queryBuilder->setParameter($mappedBy, $parentIds);
 
-				$identifiers = $this->typeProvider->getTypeIdentifiers($this->entityType);
+				$identifiers = $this->typeProvider->getTypeIdentifiers($this->graphName);
 
 			}
 
@@ -421,7 +437,7 @@ class DoctrineToMany implements IGraphQLResolver {
 	public function loadBuffered($args, $identifier){
 
 		// Fetch the buffer associated with this type
-		$type = $this->typeProvider->_doctrineMetadata[$this->entityType];
+		$type = $this->typeProvider->_doctrineMetadata[$this->graphName];
 
 		// Query name
 		$mappedBy	= $this->association['mappedBy'];
@@ -437,10 +453,10 @@ class DoctrineToMany implements IGraphQLResolver {
 		// Get the target identifiers, will need them for order and pagination
 		$targetIdentifiers = $this->typeProvider->getTypeIdentifiers($association['targetEntity']);
 
-		$entityType = $this->entityType;
+		$graphName = $this->graphName;
 
 		// Fetch the buffer associated with this type
-		$buffer 	  = $this->typeProvider->initBuffer(DoctrineDeferredBuffer::class, $entityType);
+		$buffer 	  = $this->typeProvider->initBuffer(DoctrineDeferredBuffer::class, $this->bufferKey);
 
 		// Have we already loaded to data, if not proceed
 		if(!$buffer->isLoaded()) {
@@ -452,7 +468,7 @@ class DoctrineToMany implements IGraphQLResolver {
 			foreach($buffer->get() as $parentId){
 
 				// Create a query using the arguments passed in the query
-				$queryBuilder = $this->typeProvider->getRepository(entityType)->createQueryBuilder('e');
+				$queryBuilder = $this->typeProvider->getRepository($this->doctrineClass)->createQueryBuilder('e');
 
 				if (isset($association['joinColumns'])) {
 
@@ -480,7 +496,7 @@ class DoctrineToMany implements IGraphQLResolver {
 
 					}
 
-					$identifiers = $this->typeProvider->getTypeIdentifiers($this->entityType);
+					$identifiers = $this->typeProvider->getTypeIdentifiers($this->graphName);
 
 				}else {
 
@@ -529,7 +545,7 @@ class DoctrineToMany implements IGraphQLResolver {
 	public function getOutputType(){
 
 		// Retrieve the required types for the result list
-		$listType 		= $this->typeProvider->getType($this->entityType);
+		$listType 		= $this->typeProvider->getType($this->graphName);
 		$pageInfoType 	= $this->typeProvider->getType(GraphPageInfo::NAME);
 
 		// Define the name

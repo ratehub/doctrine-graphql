@@ -65,10 +65,17 @@ class GraphEntity {
 	public function get($key){
 		$methodName = 'get' . $key;
 
-		if(method_exists($this->_object, $methodName))
-		    $value = $this->_object->$methodName();
-		else
-		    $value = $this->_object->get($key);
+		if(method_exists($this->_object, $methodName)) {
+			$value = $this->_object->$methodName();
+		}else {
+
+			if(method_exists($this->_object, 'get')) {
+				$value = $this->_object->get($key);
+			}else {
+				$value = $this->_object->$key;
+			}
+
+		}
 
 		return $value;
 	}

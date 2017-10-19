@@ -46,7 +46,7 @@ class GraphResultList {
 	 * @param $typeProvider		The typeProvider for the query
 	 * @param $entityType		The Type of entity being returned.
 	 */
-	public function __construct($dataList, $args, $graphHydrator, $typeProvider, $entityType){
+	public function __construct($dataList, $args, $graphHydrator, $typeProvider, $doctrineClass, $graphName){
 
 		$hydratedResult = array();
 
@@ -70,12 +70,12 @@ class GraphResultList {
 				if ($maxResults === null || $cnt < $maxResults) {
 
 					// Generate the GraphEntities and hydrate the doctrine objects.
-					array_push($hydratedResult, $graphHydrator->hydrate($result, $entityType));
+					array_push($hydratedResult, $graphHydrator->hydrate($result, $doctrineClass));
 
 					// Generate cursor using identifier columns
-					$identifiers = $typeProvider->getTypeIdentifiers($entityType);
+					$identifiers = $typeProvider->getTypeIdentifiers($graphName);
 
-					$cursor = static::generateCursor($result, $identifiers, $typeProvider, $entityType);
+					$cursor = static::generateCursor($result, $identifiers, $typeProvider, $graphName);
 
 					$cnt++;
 
@@ -110,7 +110,7 @@ class GraphResultList {
 	 * @param $entityType
 	 * @return null|string
 	 */
-	public static function generateCursor($result, $identifiers, $typeProvider, $entityType){
+	public static function generateCursor($result, $identifiers, $typeProvider, $graphName){
 
 		$cursorItems = array();
 
@@ -121,7 +121,7 @@ class GraphResultList {
 		 */
 		foreach ($identifiers as $id) {
 
-			$type = $typeProvider->_doctrineMetadata[$entityType];
+			$type = $typeProvider->_doctrineMetadata[$graphName];
 
 			$associations = $type->getAssociationMappings();
 
