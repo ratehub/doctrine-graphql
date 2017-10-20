@@ -110,16 +110,41 @@ class DoctrineToOne implements IGraphQLResolver {
 			'args' => $args,
 			'resolve' => function($parent, $args, $context, $info){
 
-				$targetToSource = $this->association['sourceToTargetKeyColumns'];
-
-				$sourceColumn = $this->association['fieldName'];
-
-				if($targetToSource != null)
-					$sourceColumn = array_keys($targetToSource)[0];
-
 				// Get the refenced it without triggering the doctrine auto hydration
 				// This is why we need the GraphEntity to act as a proxy.
-				$identifier = (is_object($parent) ? $parent->getDataValue($sourceColumn) : $parent[$sourceColumn]);
+				//$identifier = (is_object($parent) ? $parent->getDataValue($sourceColumn) : $parent[$sourceColumn]);
+
+
+				$targetIdentifiers = $this->typeProvider->getTypeIdentifiers($this->graphName);
+
+				$identifier = [];
+
+				$doctrineType = $this->typeProvider->getDoctrineType($this->graphName);
+
+				foreach($targetIdentifiers as $field){
+
+					if($doctrineType->hasAssociation($field)) {
+
+						$fieldAssociation = $doctrineType->getAssociationMapping($field);
+
+						$fieldName = $fieldAssociation['joinColumns'][0]['name'];
+
+						$identifier[$field] = $parent->getDataValue($fieldName);
+
+					}else{
+
+						$targetToSource = $this->association['sourceToTargetKeyColumns'];
+
+						$sourceColumn = $this->association['fieldName'];
+
+						if($targetToSource != null)
+							$sourceColumn = array_keys($targetToSource)[0];
+
+						$identifier[$field] = (is_object($parent) ? $parent->getDataValue($sourceColumn) : $parent[$sourceColumn]);
+
+					}
+
+				}
 
 				if($identifier != null) {
 
@@ -141,7 +166,7 @@ class DoctrineToOne implements IGraphQLResolver {
 						$result = null;
 
 						// Retrieve the result from the buffer
-						$data = $buffer->result($identifier);
+						$data = $buffer->result(implode(':', array_values($identifier)));
 
 						// Create a GraphEntity and Hydrate the doctrine object
 						if ($data !== null)
@@ -168,9 +193,6 @@ class DoctrineToOne implements IGraphQLResolver {
 	 */
 	public function loadBuffered($args, $identifier){
 
-
-		$mappedBy	= $this->association['joinColumns'][0]['referencedColumnName'];
-
 		// Fetch the buffer associated with this type
 		$buffer 	  = $this->typeProvider->initBuffer(DoctrineDeferredBuffer::class, $this->bufferKey);
 
@@ -180,8 +202,50 @@ class DoctrineToOne implements IGraphQLResolver {
 			// Create a query using the arguments passed in the query
 			$queryBuilder = $this->typeProvider->getRepository($this->doctrineClass)->createQueryBuilder('e');
 
-			$queryBuilder->andWhere($queryBuilder->expr()->in('e.' . $mappedBy, ':' . $mappedBy));
-			$queryBuilder->setParameter($mappedBy, $buffer->get());
+			// Single key
+			if(count(array_keys($identifier)) == 1) {
+
+				$mappedBy = array_keys($identifier)[0];
+
+				$queryBuilder->andWhere($queryBuilder->expr()->in('e.' . $mappedBy, ':' . $mappedBy));
+				$queryBuilder->setParameter($mappedBy, $buffer->get());
+
+			// Composite key
+			}else{
+
+				$etype = $this->typeProvider->getDoctrineType($this->graphName);
+
+				$cnt = 0;
+
+				$orConditions = [];
+
+				foreach($buffer->get() as $parentIdentifier){
+
+					$recordConditions = [];
+
+					foreach($parentIdentifier as $fieldName => $fieldValue){
+
+						array_push($recordConditions, $queryBuilder->expr()->eq('e.' . $fieldName, ':' . $fieldName . $cnt));
+
+						$queryBuilder->setParameter($fieldName . $cnt, $fieldValue);
+
+					}
+
+					$andX = $queryBuilder->expr()->andX();
+					$andX->addMultiple($recordConditions);
+
+					array_push($orConditions, $andX);
+
+					$cnt++;
+
+				}
+
+				$orX = $queryBuilder->expr()->orX();
+				$orX->addMultiple($orConditions);
+
+				$queryBuilder->andWhere($orX);
+
+			}
 
 			foreach ($args as $name => $values) {
 
@@ -198,13 +262,36 @@ class DoctrineToOne implements IGraphQLResolver {
 
 			$resultsLoaded = array();
 
+			$doctrineType = $this->typeProvider->getDoctrineType($this->graphName);
+
 			// Group the results by the parent entity
 			foreach ($results as $result) {
 
-				// TODO: needs to support composite identifiers
-				$parentId = $result[$mappedBy];
+				$targetIdentifiers = $this->typeProvider->getTypeIdentifiers($this->graphName);
 
-				$resultsLoaded[$parentId] = $result;
+				$parentValues = [];
+
+				foreach($targetIdentifiers as $field){
+
+					if($doctrineType->hasAssociation($field)) {
+
+						$fieldAssociation = $doctrineType->getAssociationMapping($field);
+
+						$fieldName = $fieldAssociation['joinColumns'][0]['name'];
+
+						array_push($parentValues, $result[$fieldName]);
+
+					}else{
+
+						$fieldName = $doctrineType->getColumnName($field);
+
+						array_push($parentValues, $result[$fieldName]);
+
+					}
+
+				}
+
+				$resultsLoaded[implode(':', $parentValues)] = $result;
 
 			}
 
