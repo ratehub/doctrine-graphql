@@ -13,6 +13,7 @@ use DoctrineGraph\Schema\GQL001\GQL001_User;
 use DoctrineGraph\Schema\GQL001\GQL001_City;
 use DoctrineGraph\Schema\GQL001\GQL001_Interest;
 use DoctrineGraph\Schema\GQL001\GQL001_Province;
+use DoctrineGraph\Schema\GQL001\GQL001_Location;
 
 use Doctrine\DBAL\Types\Type;
 
@@ -35,6 +36,7 @@ class DoctrineProviderCest
 		$this->_dropTable($em, 'gql001_user');
         $this->_dropTable($em, 'gql001_city');
         $this->_dropTable($em, 'gql001_province');
+		$this->_dropTable($em, 'gql001_location');
 
         $this->_dropSequence($em, 'gql001_project_id_seq');
         $this->_dropSequence($em, 'gql001_user_id_seq');
@@ -103,14 +105,24 @@ class DoctrineProviderCest
         $province->setPrimaryKey(['code']);
         $sm->createTable($province);
 
+		/* LOCATION */
+		$location = new Table("gql001_location");
+		$location->addColumn('lat', 'integer');
+		$location->addColumn('long', 'integer');
+		$location->addColumn('name', 'string');
+		$location->setPrimaryKey(['lat', 'long']);
+		$sm->createTable($location);
 
         /* CITY */
         $city = new Table("gql001_city");
         $city->addColumn('id', 'integer');
         $city->addColumn('name', 'string');
         $city->addColumn('province', 'string');
+		$city->addColumn('lat', 'integer');
+		$city->addColumn('long', 'integer');
         $city->setPrimaryKey(['id']);
         $city->addForeignKeyConstraint('gql001_province', ['province'], ['code']);
+		$city->addForeignKeyConstraint('gql001_location', ['lat', 'long'], ['lat', 'long']);
         $sm->createTable($city);
 
         $city_sequence = new \Doctrine\DBAL\Schema\Sequence('gql001_city_id_seq');
@@ -187,7 +199,7 @@ class DoctrineProviderCest
 
         $types = $provider->getTypes();
 
-        $I->assertEquals(11, count($types));
+        $I->assertEquals(12, count($types));
 
         $userType = $provider->getType('User');
 
@@ -314,9 +326,16 @@ class DoctrineProviderCest
         $province->code = 'ON';
         $em->persist($province);
 
+        $location = new GQL001_Location();
+        $location->lat 	= 25;
+        $location->long = 35;
+        $location->name = 'here';
+        $em->persist($location);
+
         $city = new GQL001_City();
         $city->name = 'Toronto';
         $city->province = $province;
+        $city->location = $location;
         $em->persist($city);
 
         $user->cities->add($city);
@@ -474,6 +493,116 @@ class DoctrineProviderCest
 
         $I->assertEquals('ON', $city['province']['code']);
 
-    }
+
+		// Retrieve a province with a list of cities
+		$result = \GraphQL\GraphQL::execute(
+			$schema,
+			"{
+			  Location{
+				items{
+				  lat
+				  long
+				  cities{
+				    items{
+				      id
+				      name
+				      province {
+				        code
+				      }
+				      location{
+				        lat,
+				        long
+				        cities{
+				          items{
+				            id
+				            name
+				          }
+				        }
+				      }
+				    }  	
+				  }
+				}
+			  }
+			}",
+			null,
+			new GraphContext(),
+			null
+		);
+
+		$provider->clearBuffers();
+
+		$I->assertEquals(1, count($result["data"]["Location"]["items"]));
+
+		$location = $result["data"]["Location"]["items"][0];
+
+		$I->assertEquals(1, count($location['cities']['items']));
+
+		$city = $location['cities']['items'][0];
+
+		$I->assertEquals(25, $city['location']['lat']);
+		$I->assertEquals(35, $city['location']['long']);
+
+
+	}
+
+	/**
+	 * Scenario:
+	 * Create a record with the mutator
+	 *
+	 * @param UnitTester $I
+	 */
+	public function case3 (UnitTester $I){
+
+		$I->wantTo('Query for User and Project');
+
+		$em = TestDb::createEntityManager('./tests/_data/schemas/default');
+
+		$this->_setupSchemaGQL001($em);
+
+		$option = new DoctrineProviderOptions();
+		$option->scalars = [
+			'datetime'  => \RateHub\GraphQL\Doctrine\Types\DateTimeType::class,
+			'array'     => \RateHub\GraphQL\Doctrine\Types\ArrayType::class,
+			'bigint'    => \RateHub\GraphQL\Doctrine\Types\BigIntType::class,
+			'hstore'    => \RateHub\GraphQL\Doctrine\Types\HstoreType::class,
+			'json'      => \RateHub\GraphQL\Doctrine\Types\JsonType::class
+		];
+		$option->em = $em;
+
+		$provider = new DoctrineProvider('TestProvider', $option);
+
+		$schema = $this->_getGraphQLSchema($provider);
+
+		$locations = [[
+			"lat" => 20,
+			"long" => 25,
+			"name" => "test"
+		]];
+
+		$result = \GraphQL\GraphQL::execute(
+			$schema,
+			'mutation CreateLocation($items: [Location__Input]){
+			  create_Location(items: $items){
+			  	lat
+			  	long
+			  }
+			}',
+			null,
+			new GraphContext(),
+			['items' => $locations]
+		);
+
+		$provider->clearBuffers();
+
+		$I->assertEquals(1, count($result));
+
+		$I->assertEquals(1, count($result["data"]["create_Location"]));
+
+		$location = $result["data"]["create_Location"][0];
+
+		$I->assertEquals(20, $location["lat"]);
+		$I->assertEquals(25, $location["long"]);
+
+	}
 
 }

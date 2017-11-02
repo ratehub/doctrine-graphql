@@ -38,6 +38,28 @@ class GQL001_City {
      */
     public $province;
 
+	/** @ManyToOne(targetEntity="GQL001_Location", inversedBy="cities")
+	 *  @JoinColumns({
+	 *     @JoinColumn(name="lat", referencedColumnName="lat"),
+	 *     @JoinColumn(name="long", referencedColumnName="long")
+	 *  })
+	 *  @GraphQLProperty(
+	 *     include=true)
+	 */
+    public $location;
+
+	/** @Column(type="integer")
+	 *	@GraphQLProperty(
+	 * 		include=true)
+	 */
+    public $lat;
+
+	/** @Column(type="integer")
+	 *	@GraphQLProperty(
+	 * 		include=true)
+	 */
+    public $long;
+
 
     public function __construct(){
 

@@ -108,13 +108,20 @@ class DoctrineMutators implements IGraphQLMutatorProvider{
 
 				foreach($args['items'] as $entityProperties){
 
+					// Resolve the graph type to is doctrine entity class
+					$entityType = $this->_typeProvider->getTypeClass($typeKey);
+
 					// Create the entity
-					$entity = new $typeKey();
+					$entity = new $entityType();
 
 					// Populate the values
 					foreach($entityProperties as $name => $value){
 
-						$entity->set($name, $value);
+						if(method_exists($entity, 'set')) {
+							$entity->set($name, $value);
+						}else{
+							$entity->$name = $value;
+						}
 
 					}
 
