@@ -110,19 +110,21 @@ class DoctrineToOne implements IGraphQLResolver {
 			'args' => $args,
 			'resolve' => function($parent, $args, $context, $info){
 
-				// Get the refenced it without triggering the doctrine auto hydration
+				// Get the reference to it without triggering the doctrine auto hydration
 				// This is why we need the GraphEntity to act as a proxy.
-				//$identifier = (is_object($parent) ? $parent->getDataValue($sourceColumn) : $parent[$sourceColumn]);
-
+				// $identifier = (is_object($parent) ? $parent->getDataValue($sourceColumn) : $parent[$sourceColumn]);
 
 				$targetIdentifiers = $this->typeProvider->getTypeIdentifiers($this->graphName);
 
-				$identifier = [];
-
 				$doctrineType = $this->typeProvider->getDoctrineType($this->graphName);
+
+				$identifier = [];
 
 				foreach($targetIdentifiers as $field){
 
+					// We need to determine the source fields that map to the target identifiers;
+
+					// Is the target identifier an association
 					if($doctrineType->hasAssociation($field)) {
 
 						$fieldAssociation = $doctrineType->getAssociationMapping($field);
@@ -131,14 +133,12 @@ class DoctrineToOne implements IGraphQLResolver {
 
 						$identifier[$field] = $parent->getDataValue($fieldName);
 
+						// Just a regular column on the target
 					}else{
 
-						$targetToSource = $this->association['sourceToTargetKeyColumns'];
+						$targetToSource = $this->association['targetToSourceKeyColumns'];
 
-						$sourceColumn = $this->association['fieldName'];
-
-						if($targetToSource != null)
-							$sourceColumn = array_keys($targetToSource)[0];
+						$sourceColumn = $targetToSource[$field];
 
 						$identifier[$field] = (is_object($parent) ? $parent->getDataValue($sourceColumn) : $parent[$sourceColumn]);
 
@@ -202,19 +202,22 @@ class DoctrineToOne implements IGraphQLResolver {
 			// Create a query using the arguments passed in the query
 			$queryBuilder = $this->typeProvider->getRepository($this->doctrineClass)->createQueryBuilder('e');
 
-			// Single key
+			// Parent Entity has a SINGLE identifier field
 			if(count(array_keys($identifier)) == 1) {
 
-				$mappedBy = array_keys($identifier)[0];
+				$mappedBy = array_keys($identifier)[0];  // Can be any field not just ID.
 
 				$queryBuilder->andWhere($queryBuilder->expr()->in('e.' . $mappedBy, ':' . $mappedBy));
 				$queryBuilder->setParameter($mappedBy, $buffer->get());
 
-			// Composite key
+			// Parent Entity has COMPOSITE identifier fields
 			}else{
 
-				$etype = $this->typeProvider->getDoctrineType($this->graphName);
-
+				// Because the identifier is a composite field we need to generate
+				// Individual AND statements and OR'd across the list of unique identifiers
+				// Doing this as the retrieval of n-to-one records can be for multiple parents.
+				// All happends as a single query and is done in bulk.
+				// Example ( id_a AND id_b ) OR ( id_a AND id_c ) ....
 				$cnt = 0;
 
 				$orConditions = [];
@@ -247,6 +250,7 @@ class DoctrineToOne implements IGraphQLResolver {
 
 			}
 
+			// Add any additional filters passed to the query
 			foreach ($args as $name => $values) {
 
 				$queryBuilder->andWhere($queryBuilder->expr()->in('e.' . $name, ':' . $name));
@@ -264,11 +268,13 @@ class DoctrineToOne implements IGraphQLResolver {
 
 			$doctrineType = $this->typeProvider->getDoctrineType($this->graphName);
 
-			// Group the results by the parent entity
+			// Group the results by the parent entity's identifier
 			foreach ($results as $result) {
 
 				$targetIdentifiers = $this->typeProvider->getTypeIdentifiers($this->graphName);
 
+				// For each result generate the result key from field values that define
+				// the assocation to the parent.
 				$parentValues = [];
 
 				foreach($targetIdentifiers as $field){

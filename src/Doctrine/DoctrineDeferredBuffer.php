@@ -28,6 +28,9 @@ class DoctrineDeferredBuffer {
 	 */
 	public $loaded 	= false;
 
+
+	public $bufferKeys = array();
+
 	/**
 	 * Add an id to the buffer
 	 *
@@ -36,8 +39,10 @@ class DoctrineDeferredBuffer {
 	public function add($id){
 
 		// Don't add duplicates unnecessarily
-		if(!in_array($id, $this->buffer))
+		if(!in_array(implode(':', $id), $this->bufferKeys)){
+			array_push($this->bufferKeys, implode(':', $id));
 			array_push($this->buffer, $id);
+		}
 
 	}
 

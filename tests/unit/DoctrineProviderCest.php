@@ -71,39 +71,42 @@ class DoctrineProviderCest
 
     public function _setupSchemaGQL001($em){
 
-        $sm = $em->getConnection()->getSchemaManager();
-
-        /* USER */
-        $user = new Table("gql001_user");
-        $user->addColumn('id', 'integer');
-        $user->addColumn('created_at', 'datetime');
-        $user->addColumn('big_int', 'bigint');
-        $user->addColumn('details', 'json_array');
-        $user->addColumn('key_values', 'hstore');
-        $user->setPrimaryKey(['id']);
-        $sm->createTable($user);
-
-        $user_sequence = new \Doctrine\DBAL\Schema\Sequence('gql001_user_id_seq');
-
-        $sm->createSequence($user_sequence);
+		$sm = $em->getConnection()->getSchemaManager();
 
 
-        /* PROJECT */
-        $project = new Table("gql001_project");
-        $project->addColumn('id', 'integer');
-        $project->addColumn('user_id', 'integer');
-        $project->setPrimaryKey(['id']);
-        $project->addForeignKeyConstraint('gql001_user', ['user_id'], ['id']);
-        $sm->createTable($project);
+		/* USER */
+		$user = new Table("gql001_user");
+		$user->addColumn('id', 'integer');
+		$user->addColumn('created_at', 'datetime');
+		$user->addColumn('big_int', 'bigint');
+		$user->addColumn('details', 'json_array');
+		$user->addColumn('key_values', 'hstore');
+		$user->setPrimaryKey(['id']);
+		$sm->createTable($user);
 
-        $project_sequence = new \Doctrine\DBAL\Schema\Sequence('gql001_project_id_seq');
-        $sm->createSequence($project_sequence);
+		$user_sequence = new \Doctrine\DBAL\Schema\Sequence('gql001_user_id_seq');
 
-        /* PROVINCE */
-        $province = new Table("gql001_province");
-        $province->addColumn('code', 'string');
-        $province->setPrimaryKey(['code']);
-        $sm->createTable($province);
+		$sm->createSequence($user_sequence);
+
+
+		/* PROJECT */
+		$project = new Table("gql001_project");
+		$project->addColumn('id', 'integer');
+		$project->addColumn('user_id', 'integer');
+		$project->setPrimaryKey(['id']);
+		$project->addForeignKeyConstraint('gql001_user', ['user_id'], ['id']);
+		$sm->createTable($project);
+
+		$project_sequence = new \Doctrine\DBAL\Schema\Sequence('gql001_project_id_seq');
+		$sm->createSequence($project_sequence);
+
+
+		/* PROVINCE */
+		$province = new Table("gql001_province");
+		$province->addColumn('code', 'string');
+		$province->setPrimaryKey(['code']);
+		$sm->createTable($province);
+
 
 		/* LOCATION */
 		$location = new Table("gql001_location");
@@ -112,6 +115,7 @@ class DoctrineProviderCest
 		$location->addColumn('name', 'string');
 		$location->setPrimaryKey(['lat', 'long']);
 		$sm->createTable($location);
+
 
         /* CITY */
         $city = new Table("gql001_city");
@@ -553,7 +557,7 @@ class DoctrineProviderCest
 	 */
 	public function case3 (UnitTester $I){
 
-		$I->wantTo('Query for User and Project');
+		$I->wantTo('Create a location');
 
 		$em = TestDb::createEntityManager('./tests/_data/schemas/default');
 
@@ -602,6 +606,133 @@ class DoctrineProviderCest
 
 		$I->assertEquals(20, $location["lat"]);
 		$I->assertEquals(25, $location["long"]);
+
+	}
+
+	/**
+	 * Scenario:
+	 * Update a record with the mutator
+	 *
+	 * @param UnitTester $I
+	 */
+	public function case4 (UnitTester $I){
+
+		$I->wantTo('Update a location');
+
+		$em = TestDb::createEntityManager('./tests/_data/schemas/default');
+
+		$this->_setupSchemaGQL001($em);
+
+		$location = new GQL001_Location();
+		$location->lat 	= 25;
+		$location->long = 35;
+		$location->name = 'here';
+		$em->persist($location);
+		$em->flush();
+
+		$option = new DoctrineProviderOptions();
+		$option->scalars = [
+			'datetime'  => \RateHub\GraphQL\Doctrine\Types\DateTimeType::class,
+			'array'     => \RateHub\GraphQL\Doctrine\Types\ArrayType::class,
+			'bigint'    => \RateHub\GraphQL\Doctrine\Types\BigIntType::class,
+			'hstore'    => \RateHub\GraphQL\Doctrine\Types\HstoreType::class,
+			'json'      => \RateHub\GraphQL\Doctrine\Types\JsonType::class
+		];
+		$option->em = $em;
+
+		$provider = new DoctrineProvider('TestProvider', $option);
+
+		$schema = $this->_getGraphQLSchema($provider);
+
+		$locations = [[
+			"lat" => 25,
+			"long" => 35,
+			"name" => "updatedname"
+		]];
+
+		$result = \GraphQL\GraphQL::execute(
+			$schema,
+			'mutation UpdateLocation($items: [Location__Input]){
+			  update_Location(items: $items){
+			  	lat
+			  	long
+			  	name
+			  }
+			}',
+			null,
+			new GraphContext(),
+			['items' => $locations]
+		);
+
+		$provider->clearBuffers();
+
+		$I->assertEquals(1, count($result));
+
+		$I->assertEquals(1, count($result["data"]["update_Location"]));
+
+		$location = $result["data"]["update_Location"][0];
+
+		$I->assertEquals(25, $location["lat"]);
+		$I->assertEquals(35, $location["long"]);
+		$I->assertEquals("updatedname", $location["name"]);
+
+	}
+
+	/**
+	 * Scenario:
+	 * Delete a record with the mutator
+	 *
+	 * @param UnitTester $I
+	 */
+	public function case5 (UnitTester $I){
+
+		$I->wantTo('Delete a location');
+
+		$em = TestDb::createEntityManager('./tests/_data/schemas/default');
+
+		$this->_setupSchemaGQL001($em);
+
+		$location = new GQL001_Location();
+		$location->lat 	= 25;
+		$location->long = 35;
+		$location->name = 'here';
+		$em->persist($location);
+		$em->flush();
+
+		$option = new DoctrineProviderOptions();
+		$option->scalars = [
+			'datetime'  => \RateHub\GraphQL\Doctrine\Types\DateTimeType::class,
+			'array'     => \RateHub\GraphQL\Doctrine\Types\ArrayType::class,
+			'bigint'    => \RateHub\GraphQL\Doctrine\Types\BigIntType::class,
+			'hstore'    => \RateHub\GraphQL\Doctrine\Types\HstoreType::class,
+			'json'      => \RateHub\GraphQL\Doctrine\Types\JsonType::class
+		];
+		$option->em = $em;
+
+		$provider = new DoctrineProvider('TestProvider', $option);
+
+		$schema = $this->_getGraphQLSchema($provider);
+
+		$locations = [[
+			"lat" => 25,
+			"long" => 35,
+		]];
+
+		$result = \GraphQL\GraphQL::execute(
+			$schema,
+			'mutation DeleteLocation($items: [Location__Input]){
+			  delete_Location(items: $items)
+			}',
+			null,
+			new GraphContext(),
+			['items' => $locations]
+		);
+
+		$provider->clearBuffers();
+
+		$I->assertEquals(1, count($result));
+
+		$I->assertEquals(true, $result["data"]["delete_Location"]);
 
 	}
 

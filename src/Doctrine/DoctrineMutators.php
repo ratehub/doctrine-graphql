@@ -7,6 +7,8 @@ use RateHub\GraphQL\Interfaces\IGraphQLMutatorProvider;
 use GraphQL\Type\Definition\ObjectType;
 use GraphQL\Type\Definition\Type;
 
+use Doctrine\ORM\Query;
+
 /**
  * Class DoctrineMutators
  *
@@ -174,7 +176,10 @@ class DoctrineMutators implements IGraphQLMutatorProvider{
 				// Get the list of id fields
 				$identifiers = $provider->getTypeIdentifiers($typeKey);
 
-				$qb = $em->getRepository($typeKey)->createQueryBuilder('e');
+				// Resolve the graph type to is doctrine entity class
+				$entityType = $this->_typeProvider->getTypeClass($typeKey);
+
+				$qb = $em->getRepository($entityType)->createQueryBuilder('e');
 
 				$idList = array();
 
@@ -203,17 +208,16 @@ class DoctrineMutators implements IGraphQLMutatorProvider{
 
 						$id = array();
 
-						// Generate a unit identifier by combining the field values
+						// Generate a unique identifier by combining the field values
 						foreach($identifiers as $identifier) {
 
-							$id = array($identifier => $entityProperties[$identifier]);
+							$id[$identifier] = $entityProperties[$identifier];
 
 							$idString .= $entityProperties[$identifier];
 
-							array_push($idList, $id);
-
 						}
 
+						array_push($idList, $id);
 
 					}
 
@@ -222,9 +226,55 @@ class DoctrineMutators implements IGraphQLMutatorProvider{
 
 				}
 
+				// BUILD WHERE CLAUSES
 
-				$qb->andWhere($qb->expr()->in('e.id' , ':id'));
-				$qb->setParameter('id', $idList);
+				// Single Identifier
+				if(count($identifiers) == 1) {
+
+					$fieldName = $identifiers[0];
+
+					$idValues = [];
+					foreach($idList as $id){
+						$idValues = $id[$fieldName];
+					}
+
+					$qb->andWhere($qb->expr()->in('e.' . $fieldName, ':' . $fieldName));
+					$qb->setParameter($fieldName, $idValues);
+
+				// Composite Identifier
+				}else{
+
+					$cnt = 0;
+
+					$orConditions = [];
+
+					foreach($idList as $id){
+
+						$recordConditions = [];
+
+						foreach($id as $fieldName => $fieldValue){
+
+							array_push($recordConditions, $qb->expr()->eq('e.' . $fieldName, ':' . $fieldName . $cnt));
+
+							$qb->setParameter($fieldName . $cnt, $fieldValue);
+
+						}
+
+						$andX = $qb->expr()->andX();
+						$andX->addMultiple($recordConditions);
+
+						array_push($orConditions, $andX);
+
+						$cnt++;
+
+					}
+
+					$orX = $qb->expr()->orX();
+					$orX->addMultiple($orConditions);
+
+					$qb->andWhere($orX);
+
+				}
 
 				$query = $qb->getQuery();
 				$query->setHint("doctrine.includeMetaColumns", true); // Include associations
@@ -233,24 +283,29 @@ class DoctrineMutators implements IGraphQLMutatorProvider{
 
 				$graphHydrator = new GraphHydrator($em);
 
-				foreach ($query->getResult(Query::HYDRATE_ARRAY) as $result) {
+				$results = $query->getResult(Query::HYDRATE_ARRAY);
+
+				foreach ($results as $result) {
 
 					$idString = '';
 
-					foreach($identifiers as $identifer) {
+					foreach($identifiers as $identifier) {
 						$idString .= $result[$identifier];
 					}
 
 					$updates = $entityPropertiesById[$idString];
 
 					// Hydrate before updating, what the changes to trigger unit of work update
-					$hydratedObject = $graphHydrator->hydrate($result, $typeKey);
+					$hydratedObject = $graphHydrator->hydrate($result, $entityType);
 
 					foreach($updates as $name => $values){
 
-						$value = $values;
-
-						$hydratedObject->getObject()->set($name, $value);
+						$entity = $hydratedObject->getObject();
+						if(method_exists($entity, 'set')){
+							$entity->set($name, $values);
+						}else{
+							$entity->$name = $values;
+						}
 
 					}
 
@@ -301,7 +356,9 @@ class DoctrineMutators implements IGraphQLMutatorProvider{
 				// Get the list of id fields
 				$identifiers = $provider->getTypeIdentifiers($typeKey);
 
-				$qb = $em->getRepository($typeKey)->createQueryBuilder('e');
+				$entityType = $this->_typeProvider->getTypeClass($typeKey);
+
+				$qb = $em->getRepository($entityType)->createQueryBuilder('e');
 
 				$idList = array();
 
@@ -330,17 +387,16 @@ class DoctrineMutators implements IGraphQLMutatorProvider{
 
 						$id = array();
 
-						// Generate a unit identifier by combining the field values
+						// Generate a unique identifier by combining the field values
 						foreach($identifiers as $identifier) {
 
-							$id = array($identifier => $entityProperties[$identifier]);
+							$id[$identifier] = $entityProperties[$identifier];
 
 							$idString .= $entityProperties[$identifier];
 
-							array_push($idList, $id);
-
 						}
 
+						array_push($idList, $id);
 
 					}
 
@@ -349,8 +405,53 @@ class DoctrineMutators implements IGraphQLMutatorProvider{
 
 				}
 
-				$qb->andWhere($qb->expr()->in('e.id' , ':id'));
-				$qb->setParameter('id', $idList);
+				// Single Identifier
+				if(count($identifiers) == 1) {
+
+					$fieldName = $identifiers[0];
+
+					$idValues = [];
+					foreach($idList as $id){
+						$idValues = $id[$fieldName];
+					}
+
+					$qb->andWhere($qb->expr()->in('e.' . $fieldName, ':' . $fieldName));
+					$qb->setParameter($fieldName, $idValues);
+
+				// Composite Identifier
+				}else{
+
+					$cnt = 0;
+
+					$orConditions = [];
+
+					foreach($idList as $id){
+
+						$recordConditions = [];
+
+						foreach($id as $fieldName => $fieldValue){
+
+							array_push($recordConditions, $qb->expr()->eq('e.' . $fieldName, ':' . $fieldName . $cnt));
+
+							$qb->setParameter($fieldName . $cnt, $fieldValue);
+
+						}
+
+						$andX = $qb->expr()->andX();
+						$andX->addMultiple($recordConditions);
+
+						array_push($orConditions, $andX);
+
+						$cnt++;
+
+					}
+
+					$orX = $qb->expr()->orX();
+					$orX->addMultiple($orConditions);
+
+					$qb->andWhere($orX);
+
+				}
 
 				$query = $qb->getQuery();
 				$query->setHint("doctrine.includeMetaColumns", true); // Include associations
@@ -363,14 +464,14 @@ class DoctrineMutators implements IGraphQLMutatorProvider{
 
 					$idString = '';
 
-					foreach($identifiers as $identifier) {
+					foreach ($identifiers as $identifier) {
 						$idString .= $result[$identifier];
 					}
 
 					$updates = $entityPropertiesById[$idString];
 
 					// Hydrate before updating, want the changes to trigger unit of work update
-					$hydratedObject = $graphHydrator->hydrate($result, $typeKey);
+					$hydratedObject = $graphHydrator->hydrate($result, $entityType);
 
 					$em->remove($hydratedObject->getObject());
 
