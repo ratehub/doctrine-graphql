@@ -40,3 +40,11 @@ script:
 
 sudo: required
 dist: trusty
+
+notifications:
+  email: false
+  slack:
+    rooms:
+      - ratehub:zfU5ke8yLcUBsh4aqr7p9iTq
+    on_success: change
+    on_failure: change
