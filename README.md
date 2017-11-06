@@ -1,4 +1,5 @@
-# doctrine-graphql
+# doctrine-graphql 
+![Build Status](https://travis-ci.org/ratehub/doctrine-graphql.svg?branch=master "Build Status")
 
 Generates all the necessary types, queries and mutators using the Doctrine
 model metadata. All standard data fetching uses the doctrine Array Hydrator. This provider
