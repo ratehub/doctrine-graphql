@@ -8,8 +8,13 @@ use RateHub\GraphQL\Doctrine\GraphHydrator;
 use RateHub\GraphQL\Doctrine\Types\JsonType;
 use RateHub\GraphQL\Doctrine\GraphResultList;
 use RateHub\GraphQL\Doctrine\GraphPageInfo;
+use RateHub\GraphQL\Doctrine\FilterString;
+use RateHub\GraphQL\Doctrine\FilterDateTime;
 
 use Doctrine\ORM\Query;
+
+use GraphQL\Type\Definition\InputObjectType;
+
 
 /**
  * Class DoctrineRoot
@@ -141,6 +146,89 @@ class DoctrineRoot implements IGraphQLResolver {
 						}
 
 					// Otherwise add a generic filter to the query
+					} else if($fieldType instanceOf InputObjectType){
+
+						if($fieldType->name === FilterString::NAME){
+
+							if(isset($values['in'])){
+
+								$qb->andWhere($qb->expr()->in('e.' . $name, ':' . $name));
+								$qb->setParameter($name, $values['in']);
+
+							}else if(isset($values['equals'])) {
+
+								$qb->andWhere($qb->expr()->eq('e.' . $name, ':' . $name));
+								$qb->setParameter($name, $values['equals']);
+
+							}else if(isset($values['startsWith'])){
+
+									$qb->andWhere($qb->expr()->like('e.' . $name, ':' . $name));
+									$qb->setParameter($name, $values['startsWith'] . '%');
+
+							}else if(isset($values['endsWith'])){
+
+								$qb->andWhere($qb->expr()->like('e.' . $name, ':' . $name));
+								$qb->setParameter($name, '%'. $values['endsWith']);
+
+							}else if(isset($values['contains'])){
+
+								$qb->andWhere($qb->expr()->like('e.' . $name, ':' . $name));
+								$qb->setParameter($name, '%' . $values['contains'] . '%');
+
+							}
+
+						}else if($fieldType->name === FilterDateTime::NAME){
+
+							if(isset($values['equals'])){
+
+								$qb->andWhere($qb->expr()->eq('e.' . $name, ':' . $name));
+								$qb->setParameter($name, $values['equals']);
+
+							}else if(isset($values['greater'])) {
+
+								$qb->andWhere('e.' . $name . ' > :'. $name);
+								$qb->setParameter($name, $values['greater']);
+
+							}else if(isset($values['less'])){
+
+								$qb->andWhere('e.' . $name . ' < :'. $name);
+								$qb->setParameter($name, $values['less']);
+
+							}else if(isset($values['greaterOrEquals'])){
+
+								$qb->andWhere('e.' . $name . ' >= :'. $name);
+								$qb->setParameter($name, $values['greaterOrEquals']);
+
+							}else if(isset($values['lessOrEquals'])){
+
+								$qb->andWhere('e.' . $name . ' <= :'. $name);
+								$qb->setParameter($name, $values['lessOrEquals']);
+
+							}else if(isset($values['between'])){
+
+								$qb->andWhere('e.' . $name . ' BETWEEN :from AND :to');
+								$qb->setParameter('from', $values['between']['from']);
+								$qb->setParameter('to', $values['between']['to']);
+
+							}
+
+						}else if($this->typeProvider->getTypeClass($this->typeProvider->getInputTypeKey($fieldType->name)) !== null){
+
+							$joinCount = 0;
+
+							$alias = 'e' . $joinCount;
+							$qb->addSelect($alias)->leftJoin('e.' . $name, $alias);
+
+
+							foreach($values as $associatedField => $associatedValue) {
+
+								$qb->andWhere($qb->expr()->eq($alias . '.' . $associatedField, ':' . $associatedField));
+								$qb->setParameter($associatedField, $associatedValue);
+
+							}
+
+						}
+
 					} else {
 
 						$qb->andWhere($qb->expr()->in('e.' . $name, ':' . $name));

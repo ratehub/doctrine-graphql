@@ -40,8 +40,10 @@ class DateTimeType extends ScalarType {
 	public function parseValue($value)
 	{
 
-		if($value !== null)
-			return DateTime::setTimestamp ($value);
+		if($value !== null){
+			$date = new \DateTime();
+			return $date->setTimestamp($value);
+		}
 		return $value;
 
 	}
@@ -61,8 +63,10 @@ class DateTimeType extends ScalarType {
 	public function parseLiteral($valueNode)
 	{
 
-		if($valueNode->value !== null)
-			return DateTime::setTimestamp ($valueNode->value);
+		if($valueNode->value !== null) {
+			$date = new \DateTime();
+			return $date->setTimestamp($valueNode->value);
+		}
 		return $valueNode->value;
 
 	}

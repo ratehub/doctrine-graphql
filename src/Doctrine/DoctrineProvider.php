@@ -3,6 +3,7 @@
 namespace RateHub\GraphQL\Doctrine;
 
 use Doctrine\ORM\Mapping\ClassMetadataInfo;
+use GraphQL\Type\Definition\StringType;
 use RateHub\GraphQL\Interfaces\IGraphQLProvider;
 
 use Doctrine\ORM\EntityManagerInterface;
@@ -12,6 +13,8 @@ use GraphQL\Type\Definition\ScalarType;
 use GraphQL\Type\Definition\ObjectType;
 use GraphQL\Type\Definition\InputObjectType;
 use GraphQL\Type\Definition\InterfaceType;
+
+use RateHub\GraphQL\Doctrine\Types\DateTimeType;
 
 use RateHub\GraphQL\Doctrine\Resolvers\DoctrineField;
 use RateHub\GraphQL\Doctrine\Resolvers\DoctrineMethod;
@@ -115,6 +118,11 @@ class DoctrineProvider Implements IGraphQLProvider {
 	 * @var array    Associative array of input types. Input types are used for create, update, delete operations
 	 */
 	private $_inputTypes = array();
+
+	/**
+	 * @var array	Associative array of the input types name to the graph type name/key.
+	 */
+	private $_inputTypesToName = array();
 
 	/**
 	 * @var array    Associative array of input filter types. Input filters are used to pass association filters for read
@@ -273,10 +281,11 @@ class DoctrineProvider Implements IGraphQLProvider {
 
 		// If no namespaces are specified the assume access to all
 		if($namespaces === null){
-			$permissions->create 	= true;
-			$permissions->read 		= true;
-			$permissions->edit 		= true;
-			$permissions->delete 	= true;
+
+			$permissions->create	= true;
+			$permissions->read		= true;
+			$permissions->edit		= true;
+			$permissions->delete	= true;
 
 		}else {
 
@@ -328,7 +337,10 @@ class DoctrineProvider Implements IGraphQLProvider {
 	 */
 	private function initializeCoreTypes(){
 
-		$this->_types[GraphPageInfo::NAME] = GraphPageInfo::getType();
+		$this->_types[GraphPageInfo::NAME]	= GraphPageInfo::getType();
+		$this->_types[FilterString::NAME]	= FilterString::getType();
+		$this->_types[FilterDateTimeBetween::NAME]	= FilterDateTimeBetween::getType($this->getType('datetime'));
+		$this->_types[FilterDateTime::NAME]	= FilterDateTime::getType($this->getType('datetime'), $this->getType(FilterDateTimeBetween::NAME));
 
 	}
 
@@ -442,10 +454,22 @@ class DoctrineProvider Implements IGraphQLProvider {
 				);
 
 				// Define the top level query filters
-				$queryFilterFields[$fieldName] = array(
-					'name' => $fieldName,
-					'type' => Type::listOf($fieldType)
-				);
+				if($fieldType instanceof StringType) {
+					$queryFilterFields[$fieldName] = array(
+						'name' => $fieldName,
+						'type' => $this->getType(FilterString::NAME)
+					);
+				}else if($fieldType instanceof DateTimeType){
+					$queryFilterFields[$fieldName] = array(
+						'name' => $fieldName,
+						'type' => $this->getType(FilterDateTime::NAME)
+					);
+				}else{
+					$queryFilterFields[$fieldName] = array(
+						'name' => $fieldName,
+						'type' => Type::listOf($fieldType)
+					);
+				}
 
 				// Define the input properties
 				$inputFields[$fieldName] = array(
@@ -456,60 +480,6 @@ class DoctrineProvider Implements IGraphQLProvider {
 			}
 
 		}
-
-		/* -----------------------------------------------
-		 * ASSOCIATION INPUT AND FILTER FIELDS
-		 * Generate fields for filter and input types based on n-to-ONE
-		 * associations.
-		 */
-		foreach ($entityMetaType->getAssociationMappings() as $association) {
-
-			if($association['type'] == ClassMetadataInfo::MANY_TO_ONE || $association['type'] == ClassMetadataInfo::ONE_TO_ONE) {
-
-				$fieldName = $association['fieldName'];
-
-				// Attempt to get the annotation on the field
-				$annotation = $this->_reader->getPropertyAnnotation($class->getProperty($fieldName), self::ANNOTATION_PROPERTY);
-
-				$propertyPermissions = $this->initPermissions($annotation);
-
-				// Check to see if this property should be included
-				if ($propertyPermissions->hasAccess()) {
-
-					// No override then use the default field resolver;
-					if ($resolverClass === null)
-						$resolverClass = DoctrineField::class;
-
-					// Instantiate the resolver
-					$resolver = new $resolverClass($fieldName, $fieldType, $fieldDescription);
-
-					// Get the definition
-					$fields[$fieldName] = $resolver->getDefinition();
-
-					// Define the filters
-					$filterFields[$fieldName] = array(
-						'name' => $fieldName,
-						'type' => Type::listOf($fieldType)
-					);
-
-					// Define the query filters
-					$queryFilterFields[$fieldName] = array(
-						'name' => $fieldName,
-						'type' => Type::listOf($fieldType)
-					);
-
-					// Define the input properties
-					$inputFields[$fieldName] = array(
-						'name' => $fieldName,
-						'type' => $fieldType
-					);
-
-				}
-
-			}
-
-		}
-
 
 		/* -----------------------------------------------
 		 * METHODS
@@ -574,6 +544,8 @@ class DoctrineProvider Implements IGraphQLProvider {
 			}
 
 		}
+
+
 
 		/* -----------------------------------------------
 		 * ASSOCIATIONS
@@ -688,19 +660,166 @@ class DoctrineProvider Implements IGraphQLProvider {
         $this->_types[$name] = new ObjectType($config);
 
 
+		/* -----------------------------------------------
+		 * ASSOCIATION INPUT FILTERS
+		 * Generate fields for filter and input types based on n-to-ONE
+		 * associations.
+		 */
+
+		$inputFilterConfig = [
+			'name' => $config['name'] . '__Filter',
+			'fields' => function() use ($entityMetaType, $filterFields, $class) {
+
+				foreach ($entityMetaType->getAssociationMappings() as $association) {
+
+					if($association['type'] == ClassMetadataInfo::MANY_TO_ONE || $association['type'] == ClassMetadataInfo::ONE_TO_ONE) {
+
+						$fieldName = $association['fieldName'];
+
+						$fieldType = $this->getInputType($this->getTypeName($association['targetEntity']));
+
+						//$fieldType = $this->mapFieldType($entityMetaType->getTypeOfField($fieldName));
+
+						// Attempt to get the annotation on the field
+						$annotation = $this->_reader->getPropertyAnnotation($class->getProperty($fieldName), self::ANNOTATION_PROPERTY);
+
+						$propertyPermissions = $this->initPermissions($annotation);
+
+						// Check to see if this property should be included
+						if ($propertyPermissions->hasAccess()) {
+
+							// Define the filters
+							$filterFields[$fieldName] = array(
+								'name' => $fieldName,
+								'type' => $fieldType
+							);
+/*
+										// Define the query filters
+										$queryFilterFields[$fieldName] = array(
+											'name' => $fieldName,
+											'type' => $fieldType
+										);
+
+										// Define the input properties
+										$inputFields[$fieldName] = array(
+											'name' => $fieldName,
+											'type' => $fieldType
+										); */
+
+						}
+
+					}
+
+				}
+
+				return $filterFields;
+
+			}
+		];
+
 
 		// Instantiate the filter type
 		if (count($filterFields) > 0)
-			$this->_inputFilterTypes[$name] = new InputObjectType(array('name' => $config['name'] . '__Filter', 'fields' => $filterFields));
+			$this->_inputFilterTypes[$name] = new InputObjectType($inputFilterConfig);
+
+
+		/* -----------------------------------------------
+		 * ASSOCIATION INPUT QUERY FILTER
+		 * Generate fields for filter and input types based on n-to-ONE
+		 * associations.
+		 */
+
+		$inputQueryFilterConfig = [
+			'name' => $config['name'] . '__QueryFilter',
+			'fields' => function() use ($entityMetaType, $queryFilterFields, $class) {
+
+				foreach ($entityMetaType->getAssociationMappings() as $association) {
+
+					if($association['type'] == ClassMetadataInfo::MANY_TO_ONE || $association['type'] == ClassMetadataInfo::ONE_TO_ONE) {
+
+						$fieldName = $association['fieldName'];
+
+						$fieldType = $this->getInputType($this->getTypeName($association['targetEntity']));
+
+						// Attempt to get the annotation on the field
+						$annotation = $this->_reader->getPropertyAnnotation($class->getProperty($fieldName), self::ANNOTATION_PROPERTY);
+
+						$propertyPermissions = $this->initPermissions($annotation);
+
+						// Check to see if this property should be included
+						if ($propertyPermissions->hasAccess()) {
+
+							// Define the input properties
+							$queryFilterFields[$fieldName] = array(
+								'name' => $fieldName,
+								'type' => $fieldType
+							);
+
+						}
+
+					}
+
+				}
+
+				return $queryFilterFields;
+
+			}
+		];
 
 		// Instantiate the query filter type
 		if (count($queryFilterFields) > 0)
-			$this->_inputQueryFilterTypes[$name] = new InputObjectType(array('name' => $config['name'] . '__QueryFilter', 'fields' => $queryFilterFields));
+			$this->_inputQueryFilterTypes[$name] = new InputObjectType($inputQueryFilterConfig);
+
+
+		/* -----------------------------------------------
+		 * ASSOCIATION INPUT
+		 * Generate fields for filter and input types based on n-to-ONE
+		 * associations.
+		 */
+
+		$inputConfig = [
+			'name' => $config['name'] . '__Input',
+			'fields' => function() use ($entityMetaType, $inputFields, $class) {
+
+				foreach ($entityMetaType->getAssociationMappings() as $association) {
+
+					if($association['type'] == ClassMetadataInfo::MANY_TO_ONE || $association['type'] == ClassMetadataInfo::ONE_TO_ONE) {
+
+						$fieldName = $association['fieldName'];
+
+						$fieldType = $this->getInputType($this->getTypeName($association['targetEntity']));
+
+						// Attempt to get the annotation on the field
+						$annotation = $this->_reader->getPropertyAnnotation($class->getProperty($fieldName), self::ANNOTATION_PROPERTY);
+
+						$propertyPermissions = $this->initPermissions($annotation);
+
+						// Check to see if this property should be included
+						if ($propertyPermissions->hasAccess()) {
+
+							// Define the input properties
+							$inputFields[$fieldName] = array(
+								'name' => $fieldName,
+								'type' => $fieldType
+							);
+
+						}
+
+					}
+
+				}
+
+				return $inputFields;
+
+			}
+		];
+
 
 		// Instantiate the input type
-		if (count($inputFields) > 0)
-			$this->_inputTypes[$name] = new InputObjectType(array('name' => $config['name'] . '__Input', 'fields' => $inputFields));
-
+		if (count($inputFields) > 0) {
+			$this->_inputTypes[$name] = new InputObjectType($inputConfig);
+			$this->_inputTypesToName[$inputConfig['name']] = $name;
+		}
 
 	}
 
@@ -846,6 +965,12 @@ class DoctrineProvider Implements IGraphQLProvider {
 	public function getTypeKeys() {
 
 		return array_keys($this->_types);
+
+	}
+
+	public function getInputTypeKey($inputName){
+
+		return $this->_inputTypesToName[$inputName];
 
 	}
 
