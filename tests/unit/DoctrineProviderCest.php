@@ -78,9 +78,9 @@ class DoctrineProviderCest
 		$user = new Table("gql001_user");
 		$user->addColumn('id', 'integer');
 		$user->addColumn('created_at', 'datetime');
-		$user->addColumn('big_int', 'bigint');
-		$user->addColumn('details', 'json_array');
-		$user->addColumn('key_values', 'hstore');
+		$user->addColumn('big_int', 'bigint', [ 'notnull' => false ]);
+		$user->addColumn('details', 'json_array', [ 'notnull' => false ]);
+		$user->addColumn('key_values', 'hstore', [ 'notnull' => false ]);
 		$user->setPrimaryKey(['id']);
 		$sm->createTable($user);
 
@@ -175,35 +175,43 @@ class DoctrineProviderCest
 
     }
 
+    private function getProvider(){
+
+		$em = TestDb::createEntityManager('./tests/_data/schemas/default');
+
+		$this->_setupSchemaGQL001($em);
+
+		$option = new DoctrineProviderOptions();
+		$option->scalars = [
+			'datetime'  => \RateHub\GraphQL\Doctrine\Types\DateTimeType::class,
+			'array'     => \RateHub\GraphQL\Doctrine\Types\ArrayType::class,
+			'bigint'    => \RateHub\GraphQL\Doctrine\Types\BigIntType::class,
+			'hstore'    => \RateHub\GraphQL\Doctrine\Types\HstoreType::class,
+			'json'      => \RateHub\GraphQL\Doctrine\Types\JsonType::class
+		];
+		$option->em = $em;
+
+		return new DoctrineProvider('TestProvider', $option);
+
+	}
+
 	/**
 	 * Scenario:
 	 * Filter = blacklist
 	 *
+	 * Instantiate the provider and verify the schema
+	 *
 	 * @param UnitTester $I
 	 */
-	public function case1 (UnitTester $I){
+	public function instantiateProvider (UnitTester $I){
 
         $I->wantTo('Instantiate DoctrineProvider');
 
-        $em = TestDb::createEntityManager('./tests/_data/schemas/default');
-
-        $this->_setupSchemaGQL001($em);
-
-        $option = new DoctrineProviderOptions();
-        $option->scalars = [
-            'datetime'  => \RateHub\GraphQL\Doctrine\Types\DateTimeType::class,
-            'array'     => \RateHub\GraphQL\Doctrine\Types\ArrayType::class,
-            'bigint'    => \RateHub\GraphQL\Doctrine\Types\BigIntType::class,
-            'hstore'    => \RateHub\GraphQL\Doctrine\Types\HstoreType::class,
-            'json'      => \RateHub\GraphQL\Doctrine\Types\JsonType::class
-        ];
-        $option->em = $em;
-
-        $provider = new DoctrineProvider('TestProvider', $option);
+        $provider = $this->getProvider();
 
         $types = $provider->getTypes();
 
-        $I->assertEquals(12, count($types));
+        $I->assertEquals(15, count($types));
 
         $userType = $provider->getType('User');
 
@@ -259,8 +267,104 @@ class DoctrineProviderCest
 
 		$I->assertEquals(0, count($result2["data"]["User"]["items"]));
 
-
      }
+
+     private function setupSampleData($provider){
+
+		 $em = $provider->getManager();
+
+		 // USER 1
+		 $user = new GQL001_User();
+		 $user->created_at = \DateTime::createFromFormat('Y/m/d H:i:s', '2000/1/1 01:00:00', new \DateTimeZone('UTC'));  // timestamp: 946688400
+		 $user->big_int = 2500000000;
+
+		 $details = [
+			 'phone'     => '555-5555',
+			 'mobile'    => '555-6000'
+		 ];
+
+		 $key_values = [
+			 'enabled'   => false,
+			 'greeting'  => 'Hello!'
+		 ];
+
+		 $user->details      = $details;
+		 $user->key_values   = $key_values;
+
+		 $em->persist($user);
+		 $em->flush();
+
+		 // USER 2
+		 $user2 = new GQL001_User();
+		 $user2->created_at = \DateTime::createFromFormat('Y/m/d H:i:s', '2000/1/1 01:00:00', new \DateTimeZone('UTC'));  // timestamp: 946688400
+		 $user2->big_int = 2500000000;
+
+		 $details = [
+			 'phone'     => '555-6666',
+			 'mobile'    => '555-7000'
+		 ];
+
+		 $key_values = [
+			 'enabled'   => false,
+			 'greeting'  => 'Hey!'
+		 ];
+
+		 $user2->details      = $details;
+		 $user2->key_values   = $key_values;
+
+		 $em->persist($user2);
+		 $em->flush();
+
+
+
+		 // Generate Multiple interests
+		 $interests = [];
+		 for($i = 0; $i < 5; $i++) {
+
+			 $interest = new GQL001_Interest();
+			 $interest->user = $user;
+			 $em->persist($interest);
+
+			 array_push($interests, $interest);
+
+		 }
+		 $em->flush();
+
+		 // PROJECT 1
+		 $project = new GQL001_Project();
+		 $project->user = $user;
+		 $em->persist($project);
+		 $em->flush();
+
+		 // PROJECT 2
+		 $project2 = new GQL001_Project();
+		 $project2->user = $user2;
+		 $em->persist($project2);
+		 $em->flush();
+
+		 // PROVINCE
+		 $province = new GQL001_Province();
+		 $province->code = 'ON';
+		 $em->persist($province);
+
+		 $location = new GQL001_Location();
+		 $location->lat 	= 25;
+		 $location->long = 35;
+		 $location->name = 'here';
+		 $em->persist($location);
+
+		 $city = new GQL001_City();
+		 $city->name = 'Toronto';
+		 $city->province = $province;
+		 $city->location = $location;
+		 $em->persist($city);
+
+		 $user->cities->add($city);
+		 $city->users->add($user);
+
+		 $em->flush();
+
+	 }
 
     /**
      * Scenario:
@@ -268,84 +372,13 @@ class DoctrineProviderCest
      *
      * @param UnitTester $I
      */
-    public function case2 (UnitTester $I){
+    public function queryUser (UnitTester $I){
 
-        $I->wantTo('Query for User and Project');
+        $I->wantTo('Query for User');
 
-        $em = TestDb::createEntityManager('./tests/_data/schemas/default');
+		$provider = $this->getProvider();
 
-        $this->_setupSchemaGQL001($em);
-
-        $option = new DoctrineProviderOptions();
-        $option->scalars = [
-            'datetime'  => \RateHub\GraphQL\Doctrine\Types\DateTimeType::class,
-            'array'     => \RateHub\GraphQL\Doctrine\Types\ArrayType::class,
-            'bigint'    => \RateHub\GraphQL\Doctrine\Types\BigIntType::class,
-            'hstore'    => \RateHub\GraphQL\Doctrine\Types\HstoreType::class,
-            'json'      => \RateHub\GraphQL\Doctrine\Types\JsonType::class
-        ];
-        $option->em = $em;
-
-        $provider = new DoctrineProvider('TestProvider', $option);
-
-        $user = new GQL001_User();
-        $user->created_at = \DateTime::createFromFormat('Y/m/d H:i:s', '2000/1/1 01:00:00', new \DateTimeZone('UTC'));  // timestamp: 946688400
-        $user->big_int = 2500000000;
-
-        $details = [
-            'phone'     => '555-5555',
-            'mobile'    => '555-6000'
-        ];
-
-        $key_values = [
-            'enabled'   => false,
-            'greeting'  => 'Hello!'
-        ];
-
-        $user->details      = $details;
-        $user->key_values   = $key_values;
-
-        $em->persist($user);
-        $em->flush();
-
-        // Generate Multiple interests
-        $interests = [];
-        for($i = 0; $i < 5; $i++) {
-
-            $interest = new GQL001_Interest();
-            $interest->user = $user;
-            $em->persist($interest);
-
-            array_push($interests, $interest);
-
-        }
-        $em->flush();
-
-        $project = new GQL001_Project();
-        $project->user = $user;
-        $em->persist($project);
-        $em->flush();
-
-        $province = new GQL001_Province();
-        $province->code = 'ON';
-        $em->persist($province);
-
-        $location = new GQL001_Location();
-        $location->lat 	= 25;
-        $location->long = 35;
-        $location->name = 'here';
-        $em->persist($location);
-
-        $city = new GQL001_City();
-        $city->name = 'Toronto';
-        $city->province = $province;
-        $city->location = $location;
-        $em->persist($city);
-
-        $user->cities->add($city);
-        $city->users->add($user);
-
-        $em->flush();
+		$this->setupSampleData($provider);
 
         $schema = $this->_getGraphQLSchema($provider);
 
@@ -374,7 +407,7 @@ class DoctrineProviderCest
 
         $provider->clearBuffers();
 
-        $I->assertEquals(1, count($result["data"]["User"]["items"]));
+        $I->assertEquals(2, count($result["data"]["User"]["items"]));
 
         $item = $result["data"]["User"]["items"][0];
 
@@ -385,9 +418,22 @@ class DoctrineProviderCest
         $I->assertEquals('Hello!', $item['key_values']->greeting);
         $I->assertEquals(5, count($item['interests']['items']));
 
-        $result = \GraphQL\GraphQL::execute(
-            $schema,
-            "{
+	}
+
+	// Query Project
+	public function queryProject (UnitTester $I){
+
+		$I->wantTo('Query for Project');
+
+		$provider = $this->getProvider();
+
+		$this->setupSampleData($provider);
+
+		$schema = $this->_getGraphQLSchema($provider);
+
+		$result = \GraphQL\GraphQL::execute(
+			$schema,
+			"{
 			  Project{
 				items{
 				  id
@@ -403,26 +449,37 @@ class DoctrineProviderCest
 				}
 			  }
 			}",
-            null,
-            new GraphContext(),
-            null
-        );
+			null,
+			new GraphContext(),
+			null
+		);
 
-        $provider->clearBuffers();
+		$provider->clearBuffers();
 
-        $I->assertEquals(1, count($result["data"]["Project"]["items"]));
+		$I->assertEquals(2, count($result["data"]["Project"]["items"]));
 
-        $item = $result["data"]["Project"]["items"][0];
+		$item = $result["data"]["Project"]["items"][0];
 
-        $I->assertEquals(1, $item['id']);
+		$I->assertEquals(1, $item['id']);
 
-        $I->assertEquals("Toronto", $item['user']['cities']['items'][0]['name']);
+		$I->assertEquals("Toronto", $item['user']['cities']['items'][0]['name']);
 
+	}
 
-        // Retrieve a cities list of users
-        $result = \GraphQL\GraphQL::execute(
-            $schema,
-            "{
+	public function queryCityUsers(UnitTester $I){
+
+		$I->wantTo('Query for a city\'s users');
+
+		$provider = $this->getProvider();
+
+		$this->setupSampleData($provider);
+
+		$schema = $this->_getGraphQLSchema($provider);
+
+		// Retrieve a cities list of users
+		$result = \GraphQL\GraphQL::execute(
+			$schema,
+			"{
 			  City{
 				items{
 				  id
@@ -438,31 +495,42 @@ class DoctrineProviderCest
 				}
 			  }
 			}",
-            null,
-            new GraphContext(),
-            null
-        );
+			null,
+			new GraphContext(),
+			null
+		);
 
-        $provider->clearBuffers();
+		$provider->clearBuffers();
 
-        $I->assertEquals(1, count($result["data"]["City"]["items"]));
+		$I->assertEquals(1, count($result["data"]["City"]["items"]));
 
-        $item = $result["data"]["City"]["items"][0];
+		$item = $result["data"]["City"]["items"][0];
 
-        $I->assertEquals(1, $item['id']);
+		$I->assertEquals(1, $item['id']);
 
-        $I->assertEquals('ON', $item['province']['code']);
+		$I->assertEquals('ON', $item['province']['code']);
 
-        $I->assertEquals(1, count($item['users']['items']));
+		$I->assertEquals(1, count($item['users']['items']));
 
-        $I->assertEquals(1, $item['users']['items'][0]['id']);
+		$I->assertEquals(1, $item['users']['items'][0]['id']);
 
 
+	}
 
-        // Retrieve a province with a list of cities
-        $result = \GraphQL\GraphQL::execute(
-            $schema,
-            "{
+	public function queryProvinceWithCities(UnitTester $I){
+
+		$I->wantTo('Query for a province\'s cities');
+
+		$provider = $this->getProvider();
+
+		$this->setupSampleData($provider);
+
+		$schema = $this->_getGraphQLSchema($provider);
+
+		// Retrieve a province with a list of cities
+		$result = \GraphQL\GraphQL::execute(
+			$schema,
+			"{
 			  Province{
 				items{
 				  code
@@ -478,25 +546,36 @@ class DoctrineProviderCest
 				}
 			  }
 			}",
-            null,
-            new GraphContext(),
-            null
-        );
+			null,
+			new GraphContext(),
+			null
+		);
 
-        $provider->clearBuffers();
+		$provider->clearBuffers();
 
-        $I->assertEquals(1, count($result["data"]["Province"]["items"]));
+		$I->assertEquals(1, count($result["data"]["Province"]["items"]));
 
-        $province = $result["data"]["Province"]["items"][0];
+		$province = $result["data"]["Province"]["items"][0];
 
-        $I->assertEquals('ON', $province['code']);
+		$I->assertEquals('ON', $province['code']);
 
-        $I->assertEquals(1, count($province['cities']['items']));
+		$I->assertEquals(1, count($province['cities']['items']));
 
-        $city = $province['cities']['items'][0];
+		$city = $province['cities']['items'][0];
 
-        $I->assertEquals('ON', $city['province']['code']);
+		$I->assertEquals('ON', $city['province']['code']);
 
+	}
+
+	public function queryLocation(UnitTester $I){
+
+		$I->wantTo('Query for a location');
+
+		$provider = $this->getProvider();
+
+		$this->setupSampleData($provider);
+
+		$schema = $this->_getGraphQLSchema($provider);
 
 		// Retrieve a province with a list of cities
 		$result = \GraphQL\GraphQL::execute(
@@ -546,7 +625,6 @@ class DoctrineProviderCest
 		$I->assertEquals(25, $city['location']['lat']);
 		$I->assertEquals(35, $city['location']['long']);
 
-
 	}
 
 	/**
@@ -555,7 +633,7 @@ class DoctrineProviderCest
 	 *
 	 * @param UnitTester $I
 	 */
-	public function case3 (UnitTester $I){
+	public function createLocation (UnitTester $I){
 
 		$I->wantTo('Create a location');
 
@@ -615,7 +693,7 @@ class DoctrineProviderCest
 	 *
 	 * @param UnitTester $I
 	 */
-	public function case4 (UnitTester $I){
+	public function updateLocation (UnitTester $I){
 
 		$I->wantTo('Update a location');
 
@@ -684,7 +762,7 @@ class DoctrineProviderCest
 	 *
 	 * @param UnitTester $I
 	 */
-	public function case5 (UnitTester $I){
+	public function deleteLocation (UnitTester $I){
 
 		$I->wantTo('Delete a location');
 
@@ -733,6 +811,485 @@ class DoctrineProviderCest
 		$I->assertEquals(1, count($result));
 
 		$I->assertEquals(true, $result["data"]["delete_Location"]);
+
+	}
+
+	private function setupStringFilterData($provider){
+
+		$em = $provider->getManager();
+
+		$location = new GQL001_Location();
+		$location->lat 	= 25;
+		$location->long = 35;
+		$location->name = 'Kingston';
+		$em->persist($location);
+
+		$location2 = new GQL001_Location();
+		$location2->lat  = 26;
+		$location2->long = 36;
+		$location2->name = 'Toronto';
+		$em->persist($location2);
+
+		$location3 = new GQL001_Location();
+		$location3->lat  = 27;
+		$location3->long = 37;
+		$location3->name = 'Ottawa';
+		$em->persist($location3);
+
+		$location4 = new GQL001_Location();
+		$location4->lat  = 28;
+		$location4->long = 38;
+		$location4->name = 'Ottawa City';
+		$em->persist($location4);
+
+		$em->flush();
+
+	}
+
+	public function stringFilterIn(UnitTester $I){
+
+		$I->wantTo('Query string with in filter');
+
+		$provider = $this->getProvider();
+
+		$this->setupStringFilterData($provider);
+
+		$schema = $this->_getGraphQLSchema($provider);
+
+		// Retrieve a province with a list of cities
+		$result = \GraphQL\GraphQL::execute(
+			$schema,
+			"{
+			  Location( name: { in: [\"Kingston\"] } ){
+				items{
+				  lat
+				  long
+				  name
+				}
+			  }
+			}",
+			null,
+			new GraphContext(),
+			null
+		);
+
+		$provider->clearBuffers();
+
+		$I->assertEquals(1, count($result["data"]["Location"]["items"]));
+
+		$I->assertEquals('Kingston', $result["data"]["Location"]["items"][0]['name']);
+
+	}
+
+	public function stringFilterEquals(UnitTester $I){
+
+		$I->wantTo('Query string with equals filter');
+
+		$provider = $this->getProvider();
+
+		$this->setupStringFilterData($provider);
+
+		$schema = $this->_getGraphQLSchema($provider);
+
+		// Retrieve a province with a list of cities
+		$result = \GraphQL\GraphQL::execute(
+			$schema,
+			"{
+			  Location( name: { equals: \"Kingston\" } ){
+				items{
+				  lat
+				  long
+				  name
+				}
+			  }
+			}",
+			null,
+			new GraphContext(),
+			null
+		);
+
+		$provider->clearBuffers();
+
+		$I->assertEquals(1, count($result["data"]["Location"]["items"]));
+
+		$I->assertEquals('Kingston', $result["data"]["Location"]["items"][0]['name']);
+
+	}
+
+	public function stringFilterContains(UnitTester $I){
+
+		$I->wantTo('Query string with contains filter');
+
+		$provider = $this->getProvider();
+
+		$this->setupStringFilterData($provider);
+
+		$schema = $this->_getGraphQLSchema($provider);
+
+		// Retrieve a province with a list of cities
+		$result = \GraphQL\GraphQL::execute(
+			$schema,
+			"{
+			  Location( name: { contains: \"ngst\" } ){
+				items{
+				  lat
+				  long
+				  name
+				}
+			  }
+			}",
+			null,
+			new GraphContext(),
+			null
+		);
+
+		$provider->clearBuffers();
+
+		$I->assertEquals(1, count($result["data"]["Location"]["items"]));
+
+		$I->assertEquals('Kingston', $result["data"]["Location"]["items"][0]['name']);
+
+	}
+
+	public function stringFilterStartsWith(UnitTester $I){
+
+		$I->wantTo('Query string with starts with filter');
+
+		$provider = $this->getProvider();
+
+		$this->setupStringFilterData($provider);
+
+		$schema = $this->_getGraphQLSchema($provider);
+
+		// Retrieve a province with a list of cities
+		$result = \GraphQL\GraphQL::execute(
+			$schema,
+			"{
+			  Location( name: { startsWith: \"Ottawa\" } ){
+				items{
+				  lat
+				  long
+				  name
+				}
+			  }
+			}",
+			null,
+			new GraphContext(),
+			null
+		);
+
+		$provider->clearBuffers();
+
+		$I->assertEquals(2, count($result["data"]["Location"]["items"]));
+
+		$locations = $result["data"]["Location"]["items"];
+
+		$ottawaFound 		= false;
+		$ottawaCityFound 	= false;
+		foreach($locations as $location){
+			if($location['name'] === "Ottawa")
+				$ottawaFound = true;
+			if($location['name'] === "Ottawa City")
+				$ottawaCityFound = true;
+		}
+
+		$I->assertEquals(true, $ottawaFound && $ottawaCityFound);
+
+	}
+
+	public function stringFilterEndsWith(UnitTester $I){
+
+		$I->wantTo('Query string with ends with filter');
+
+		$provider = $this->getProvider();
+
+		$this->setupStringFilterData($provider);
+
+		$schema = $this->_getGraphQLSchema($provider);
+
+		// Retrieve a province with a list of cities
+		$result = \GraphQL\GraphQL::execute(
+			$schema,
+			"{
+			  Location( name: { endsWith: \"onto\" } ){
+				items{
+				  lat
+				  long
+				  name
+				}
+			  }
+			}",
+			null,
+			new GraphContext(),
+			null
+		);
+
+		$provider->clearBuffers();
+
+		$I->assertEquals(1, count($result["data"]["Location"]["items"]));
+
+		$I->assertEquals('Toronto', $result["data"]["Location"]["items"][0]['name']);
+
+	}
+
+	private function setupDateTimeFilterData($provider){
+
+		$em = $provider->getManager();
+
+		$user1 = new GQL001_User();
+		$user1->created_at = \DateTime::createFromFormat('Y/m/d H:i:s', '2001/1/1 01:00:00', new \DateTimeZone('UTC'));  // timestamp: 946688400
+		$em->persist($user1);
+
+		$user2 = new GQL001_User();
+		$user2->created_at = \DateTime::createFromFormat('Y/m/d H:i:s', '2002/1/1 01:00:00', new \DateTimeZone('UTC'));  // timestamp: 946688400
+		$em->persist($user2);
+
+		$user3 = new GQL001_User();
+		$user3->created_at = \DateTime::createFromFormat('Y/m/d H:i:s', '2003/1/1 01:00:00', new \DateTimeZone('UTC'));  // timestamp: 946688400
+		$em->persist($user3);
+
+		$user4 = new GQL001_User();
+		$user4->created_at = \DateTime::createFromFormat('Y/m/d H:i:s', '2004/1/1 01:00:00', new \DateTimeZone('UTC'));  // timestamp: 946688400
+		$em->persist($user4);
+
+		$em->flush();
+
+	}
+
+	public function stringFilterDateEquals(UnitTester $I){
+
+		$I->wantTo('Query date equals filter');
+
+		$provider = $this->getProvider();
+
+		$this->setupDateTimeFilterData($provider);
+
+		$schema = $this->_getGraphQLSchema($provider);
+
+		$date1 = \DateTime::createFromFormat('Y/m/d H:i:s', '2001/1/1 01:00:00', new \DateTimeZone('UTC'));
+
+		// Retrieve a province with a list of cities
+		$result = \GraphQL\GraphQL::execute(
+			$schema,
+			"{
+			  User( created_at: { equals: \"" . $date1->getTimestamp(). "\" } ){
+				items{
+				  created_at
+				}
+			  }
+			}",
+			null,
+			new GraphContext(),
+			null
+		);
+
+		$provider->clearBuffers();
+
+		$I->assertEquals(1, count($result["data"]["User"]["items"]));
+
+		$I->assertEquals($date1->getTimestamp(), $result["data"]["User"]["items"][0]['created_at']);
+
+	}
+
+	public function stringFilterDateGreater(UnitTester $I){
+
+		$I->wantTo('Query date greater filter');
+
+		$provider = $this->getProvider();
+
+		$this->setupDateTimeFilterData($provider);
+
+		$schema = $this->_getGraphQLSchema($provider);
+
+		$date1 = \DateTime::createFromFormat('Y/m/d H:i:s', '2003/1/1 01:00:00', new \DateTimeZone('UTC'));
+
+		// Retrieve a province with a list of cities
+		$result = \GraphQL\GraphQL::execute(
+			$schema,
+			"{
+			  User( created_at: { greater: \"" . $date1->getTimestamp(). "\" } ){
+				items{
+				  created_at
+				}
+			  }
+			}",
+			null,
+			new GraphContext(),
+			null
+		);
+
+		$provider->clearBuffers();
+
+		$I->assertEquals(1, count($result["data"]["User"]["items"]));
+
+	}
+
+	public function stringFilterDateLess(UnitTester $I){
+
+		$I->wantTo('Query date less filter');
+
+		$provider = $this->getProvider();
+
+		$this->setupDateTimeFilterData($provider);
+
+		$schema = $this->_getGraphQLSchema($provider);
+
+		$date1 = \DateTime::createFromFormat('Y/m/d H:i:s', '2003/1/1 01:00:00', new \DateTimeZone('UTC'));
+
+		// Retrieve a province with a list of cities
+		$result = \GraphQL\GraphQL::execute(
+			$schema,
+			"{
+			  User( created_at: { less: \"" . $date1->getTimestamp(). "\" } ){
+				items{
+				  created_at
+				}
+			  }
+			}",
+			null,
+			new GraphContext(),
+			null
+		);
+
+		$provider->clearBuffers();
+
+		$I->assertEquals(2, count($result["data"]["User"]["items"]));
+
+	}
+
+	public function stringFilterDateGreaterOrEqual(UnitTester $I){
+
+		$I->wantTo('Query date greater or equals filter');
+
+		$provider = $this->getProvider();
+
+		$this->setupDateTimeFilterData($provider);
+
+		$schema = $this->_getGraphQLSchema($provider);
+
+		$date1 = \DateTime::createFromFormat('Y/m/d H:i:s', '2003/1/1 01:00:00', new \DateTimeZone('UTC'));
+
+		// Retrieve a province with a list of cities
+		$result = \GraphQL\GraphQL::execute(
+			$schema,
+			"{
+			  User( created_at: { greaterOrEquals: \"" . $date1->getTimestamp(). "\" } ){
+				items{
+				  created_at
+				}
+			  }
+			}",
+			null,
+			new GraphContext(),
+			null
+		);
+
+		$provider->clearBuffers();
+
+		$I->assertEquals(2, count($result["data"]["User"]["items"]));
+
+	}
+
+	public function stringFilterDateLessOrEqual(UnitTester $I){
+
+		$I->wantTo('Query date less or equals filter');
+
+		$provider = $this->getProvider();
+
+		$this->setupDateTimeFilterData($provider);
+
+		$schema = $this->_getGraphQLSchema($provider);
+
+		$date1 = \DateTime::createFromFormat('Y/m/d H:i:s', '2003/1/1 01:00:00', new \DateTimeZone('UTC'));
+
+		// Retrieve a province with a list of cities
+		$result = \GraphQL\GraphQL::execute(
+			$schema,
+			"{
+			  User( created_at: { lessOrEquals: \"" . $date1->getTimestamp(). "\" } ){
+				items{
+				  created_at
+				}
+			  }
+			}",
+			null,
+			new GraphContext(),
+			null
+		);
+
+		$provider->clearBuffers();
+
+		$I->assertEquals(3, count($result["data"]["User"]["items"]));
+
+	}
+
+	public function stringFilterDateBetween(UnitTester $I){
+
+		$I->wantTo('Query date between filter');
+
+		$provider = $this->getProvider();
+
+		$this->setupDateTimeFilterData($provider);
+
+		$schema = $this->_getGraphQLSchema($provider);
+
+		$date1 = \DateTime::createFromFormat('Y/m/d H:i:s', '2002/1/1 01:00:00', new \DateTimeZone('UTC'));
+		$date2 = \DateTime::createFromFormat('Y/m/d H:i:s', '2003/1/1 01:00:00', new \DateTimeZone('UTC'));
+
+		// Retrieve a province with a list of cities
+		$result = \GraphQL\GraphQL::execute(
+			$schema,
+			"{
+			  User( created_at: { between: { from: \"" . $date1->getTimestamp(). "\", to: \"" . $date2->getTimestamp() . "\" } } ){
+				items{
+				  created_at
+				}
+			  }
+			}",
+			null,
+			new GraphContext(),
+			null
+		);
+
+		$provider->clearBuffers();
+
+		$I->assertEquals(2, count($result["data"]["User"]["items"]));
+
+	}
+
+	public function toOneAssociationFilter(UnitTester $I){
+
+		$I->wantTo('Query and filter by a to-one association');
+
+		$provider = $this->getProvider();
+
+		$this->setupSampleData($provider);
+
+		$schema = $this->_getGraphQLSchema($provider);
+
+		// Retrieve a province with a list of cities
+		$result = \GraphQL\GraphQL::execute(
+			$schema,
+			"{
+			  Project( user: { id: 2 } ){
+				items{
+				  id
+				}
+			  }
+			}",
+			null,
+			new GraphContext(),
+			null
+		);
+
+		$provider->clearBuffers();
+
+		$I->assertEquals(1, count($result["data"]["Project"]["items"]));
+
+		$project = $result["data"]["Project"]["items"][0];
+
+		$I->assertEQuals(2, $project["id"]);
+
 
 	}
 
