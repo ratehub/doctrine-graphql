@@ -9,13 +9,6 @@ services:
 addons:
   postgresql: "9.5"
 
-  artifacts:
-    paths:
-      - tests/_output
-      - data/trace
-      - apache-error.log
-      - selenium.log
-
 cache:
   directories:
     - $HOME/.composer/cache
@@ -45,6 +38,6 @@ notifications:
   email: false
   slack:
     rooms:
-      - ratehub:zfU5ke8yLcUBsh4aqr7p9iTq
+      - ratehub:zfU5ke8yLcUBsh4aqr7p9iTq#devops
     on_success: change
     on_failure: change
