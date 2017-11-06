@@ -1,0 +1,42 @@
+language: php
+
+php:
+  - 7.0
+
+services:
+  - postgresql
+
+addons:
+  postgresql: "9.5"
+
+  artifacts:
+    paths:
+      - tests/_output
+      - data/trace
+      - apache-error.log
+      - selenium.log
+
+cache:
+  directories:
+    - $HOME/.composer/cache
+
+before_install:
+  # work around travis issues
+  - sudo apt-get install -y postgresql-9.5-postgis-2.3
+
+  - sudo chmod o+rx /home/travis
+
+install:
+  # install app dependencies
+  - composer install --prefer-dist
+
+before_script:
+  # create pgsql db
+  - tests/_data/build/setup-database.sh
+
+
+script:
+  - vendor/bin/codecept run unit
+
+sudo: required
+dist: trusty
