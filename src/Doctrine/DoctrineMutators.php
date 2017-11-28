@@ -689,23 +689,28 @@ class DoctrineMutators implements IGraphQLMutatorProvider{
 
 		foreach ($entityType->getAssociationMappings() as $name=>$association) {
 
-			$join = 'e.'.$name;
-			$alias = 'e'.count($joins);
+			if ($association['isOwningSide'] || $association['type'] & ClassMetadataInfo::TO_ONE ||
+					$association['fetch'] == ClassMetadataInfo::FETCH_EAGER) {
 
-			$queryBuilder->addSelect($alias)->leftJoin('e.'.$name, $alias);
-			$joins[$join] = $alias;
+				$join = 'e.'.$name;
+				$alias = 'e'.count($joins);
+				$queryBuilder->addSelect($alias)->leftJoin('e.'.$name, $alias);
+				$joins[$join] = $alias;
 
-			$targetClass = $em->getClassMetadata($association['targetEntity']);
-			$targetAssociations = $targetClass->getAssociationMappings();
+				// eager load where specified
+				$targetClass = $em->getClassMetadata($association['targetEntity']);
+				$targetAssociations = $targetClass->getAssociationMappings();
 
-			foreach ($targetAssociations as $name=>$association) {
-
-				$join = $alias.'.'.$name;
-				$talias = 'e'.count($joins);
-				$queryBuilder->addSelect($talias)->leftJoin($join, $talias);
-				$joins[$join] = $talias;
-
+				foreach ($targetAssociations as $name=>$association) {
+					if ($association['fetch'] == ClassMetadataInfo::FETCH_EAGER) {
+						$join = $alias.'.'.$name;
+						$alias = 'e'.count($joins);
+						$queryBuilder->addSelect($alias)->leftJoin($join, $alias);
+						$joins[$join] = $alias;
+					}
+				}
 			}
+
 
 		}
 
