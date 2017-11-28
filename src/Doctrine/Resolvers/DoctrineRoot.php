@@ -208,7 +208,7 @@ class DoctrineRoot implements IGraphQLResolver {
 								$qb->andWhere('e.' . $name . ' <= :'. $name);
 								$qb->setParameter($name, $values['lessOrEquals']);
 
-							}else if(isset($values['between'])){
+							}else if(isset($values['between']) && isset($values['between']['from']) && isset($values['between']['to'])){
 
 								$qb->andWhere('e.' . $name . ' BETWEEN :from AND :to');
 								$qb->setParameter('from', $values['between']['from']);
