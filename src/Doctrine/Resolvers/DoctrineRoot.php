@@ -2,6 +2,8 @@
 
 namespace RateHub\GraphQL\Doctrine\Resolvers;
 
+use GraphQL\Type\Definition\BooleanType;
+use GraphQL\Type\Definition\ListOfType;
 use RateHub\GraphQL\Interfaces\IGraphQLResolver;
 
 use RateHub\GraphQL\Doctrine\GraphHydrator;
@@ -118,6 +120,8 @@ class DoctrineRoot implements IGraphQLResolver {
 				// on the supplied args. Args get removed once used.
 				$filteredArgs = GraphPageInfo::paginateQuery($qb, $identifiers, $args);
 
+				$joinCount = 0;
+
 				// Add additional WHERE clauses based are filters
 				foreach ($filteredArgs as $name => $values) {
 
@@ -214,11 +218,8 @@ class DoctrineRoot implements IGraphQLResolver {
 
 						}else if($this->typeProvider->getTypeClass($this->typeProvider->getInputTypeKey($fieldType->name)) !== null){
 
-							$joinCount = 0;
-
 							$alias = 'e' . $joinCount;
 							$qb->addSelect($alias)->leftJoin('e.' . $name, $alias);
-
 
 							foreach($values as $associatedField => $associatedValue) {
 
@@ -227,9 +228,23 @@ class DoctrineRoot implements IGraphQLResolver {
 
 							}
 
+							$joinCount++;
+
 						}
 
 					} else {
+
+						if($fieldType instanceof ListOfType && $fieldType->ofType instanceOf BooleanType){
+
+							$updatedValues = [];
+
+							foreach($values as $value){
+								array_push($updatedValues, ($value !== true ? 'false' : 'true'));
+							}
+
+							$values = $updatedValues;
+
+						}
 
 						$qb->andWhere($qb->expr()->in('e.' . $name, ':' . $name));
 						$qb->setParameter($name, $values);

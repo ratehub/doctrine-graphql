@@ -3,6 +3,7 @@
 namespace RateHub\GraphQL\Doctrine;
 
 use Doctrine\ORM\Mapping\ClassMetadataInfo;
+use GraphQL\Type\Definition\ListOfType;
 use GraphQL\Type\Definition\StringType;
 use RateHub\GraphQL\Interfaces\IGraphQLProvider;
 
@@ -678,8 +679,6 @@ class DoctrineProvider Implements IGraphQLProvider {
 
 						$fieldType = $this->getInputType($this->getTypeName($association['targetEntity']));
 
-						//$fieldType = $this->mapFieldType($entityMetaType->getTypeOfField($fieldName));
-
 						// Attempt to get the annotation on the field
 						$annotation = $this->_reader->getPropertyAnnotation($class->getProperty($fieldName), self::ANNOTATION_PROPERTY);
 
@@ -693,18 +692,6 @@ class DoctrineProvider Implements IGraphQLProvider {
 								'name' => $fieldName,
 								'type' => $fieldType
 							);
-/*
-										// Define the query filters
-										$queryFilterFields[$fieldName] = array(
-											'name' => $fieldName,
-											'type' => $fieldType
-										);
-
-										// Define the input properties
-										$inputFields[$fieldName] = array(
-											'name' => $fieldName,
-											'type' => $fieldType
-										); */
 
 						}
 
@@ -773,7 +760,7 @@ class DoctrineProvider Implements IGraphQLProvider {
 
 		/* -----------------------------------------------
 		 * ASSOCIATION INPUT
-		 * Generate fields for filter and input types based on n-to-ONE
+		 * Generate fields for input types based on n-to-ONE
 		 * associations.
 		 */
 
@@ -801,6 +788,26 @@ class DoctrineProvider Implements IGraphQLProvider {
 							$inputFields[$fieldName] = array(
 								'name' => $fieldName,
 								'type' => $fieldType
+							);
+
+						}
+					}else if($association['type'] == ClassMetadataInfo::ONE_TO_MANY || $association['type'] == ClassMetadataInfo::MANY_TO_MANY) {
+
+						$fieldName = $association['fieldName'];
+
+						$fieldType = $this->getInputType($this->getTypeName($association['targetEntity']));
+
+						// Attempt to get the annotation on the field
+						$annotation = $this->_reader->getPropertyAnnotation($class->getProperty($fieldName), self::ANNOTATION_PROPERTY);
+
+						$propertyPermissions = $this->initPermissions($annotation);
+
+						// Check to see if this property should be included
+						if ($propertyPermissions->hasAccess()) {
+
+							$inputFields[$fieldName] = array(
+								'name' => $fieldName,
+								'type' => Type::listOf($fieldType)
 							);
 
 						}
@@ -871,6 +878,8 @@ class DoctrineProvider Implements IGraphQLProvider {
 			return $this->getType('array');
 		} else if ($doctrineType === 'bigint'){
 			return $this->getType('bigint');
+		} else if ($doctrineType === 'smallint'){
+			return Type::int();
 		}
 
 		// Default to string

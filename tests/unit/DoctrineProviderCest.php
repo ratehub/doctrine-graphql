@@ -362,7 +362,21 @@ class DoctrineProviderCest
 		 $user->cities->add($city);
 		 $city->users->add($user);
 
+		 $city2 = new GQL001_City();
+		 $city2->name = 'Vancouver';
+		 $city2->province = $province;
+		 $city2->location = $location;
+		 $em->persist($city2);
+
+		 $city3 = new GQL001_City();
+		 $city3->name = 'Ottawa';
+		 $city3->province = $province;
+		 $city3->location = $location;
+		 $em->persist($city3);
+
 		 $em->flush();
+
+		 $em->clear();
 
 	 }
 
@@ -502,7 +516,7 @@ class DoctrineProviderCest
 
 		$provider->clearBuffers();
 
-		$I->assertEquals(1, count($result["data"]["City"]["items"]));
+		$I->assertEquals(3, count($result["data"]["City"]["items"]));
 
 		$item = $result["data"]["City"]["items"][0];
 
@@ -559,7 +573,7 @@ class DoctrineProviderCest
 
 		$I->assertEquals('ON', $province['code']);
 
-		$I->assertEquals(1, count($province['cities']['items']));
+		$I->assertEquals(3, count($province['cities']['items']));
 
 		$city = $province['cities']['items'][0];
 
@@ -618,7 +632,7 @@ class DoctrineProviderCest
 
 		$location = $result["data"]["Location"]["items"][0];
 
-		$I->assertEquals(1, count($location['cities']['items']));
+		$I->assertEquals(3, count($location['cities']['items']));
 
 		$city = $location['cities']['items'][0];
 
@@ -1292,5 +1306,155 @@ class DoctrineProviderCest
 
 
 	}
+
+	/**
+	 * Scenario:
+	 * Create a record with the mutator
+	 *
+	 * @param UnitTester $I
+	 */
+	public function createInterestWithExistingUser (UnitTester $I){
+
+		$I->wantTo('Create an interest record linked to an existing user');
+
+		$em = TestDb::createEntityManager('./tests/_data/schemas/default');
+
+		$this->_setupSchemaGQL001($em);
+
+		$option = new DoctrineProviderOptions();
+		$option->scalars = [
+			'datetime'  => \RateHub\GraphQL\Doctrine\Types\DateTimeType::class,
+			'array'     => \RateHub\GraphQL\Doctrine\Types\ArrayType::class,
+			'bigint'    => \RateHub\GraphQL\Doctrine\Types\BigIntType::class,
+			'hstore'    => \RateHub\GraphQL\Doctrine\Types\HstoreType::class,
+			'json'      => \RateHub\GraphQL\Doctrine\Types\JsonType::class
+		];
+		$option->em = $em;
+
+		$provider = new DoctrineProvider('TestProvider', $option);
+
+		$this->setupSampleData($provider);
+
+		$schema = $this->_getGraphQLSchema($provider);
+
+		$obj = json_decode('{ id: 1 }');
+
+		$interests = [[
+							"user" => ["id" => 1]
+					 	]];
+
+		$result = \GraphQL\GraphQL::execute(
+			$schema,
+			'mutation CreateInterest($items: [Interest__Input]){
+			  create_Interest(items: $items){
+			  	id,
+			  	user{
+			  		id
+			  	}
+			  }
+			}',
+			null,
+			new GraphContext(),
+			['items' => $interests]
+		);
+
+		$provider->clearBuffers();
+
+		$I->assertEquals(1, count($result));
+
+		$I->assertEquals(1, count($result["data"]["create_Interest"]));
+
+		$interest = $result["data"]["create_Interest"][0];
+
+		$I->assertEquals(1, $interest["user"]["id"]);
+
+	}
+
+	/**
+	 * Scenario:
+	 * Create a record with the mutator
+	 *
+	 * @param UnitTester $I
+	 */
+	public function updateUserAddMultipleExistingCities (UnitTester $I){
+
+/*		$I->wantTo('Update user add multiple existing cities');
+
+		$em = TestDb::createEntityManager('./tests/_data/schemas/default');
+
+		$this->_setupSchemaGQL001($em);
+
+		$option = new DoctrineProviderOptions();
+		$option->scalars = [
+			'datetime'  => \RateHub\GraphQL\Doctrine\Types\DateTimeType::class,
+			'array'     => \RateHub\GraphQL\Doctrine\Types\ArrayType::class,
+			'bigint'    => \RateHub\GraphQL\Doctrine\Types\BigIntType::class,
+			'hstore'    => \RateHub\GraphQL\Doctrine\Types\HstoreType::class,
+			'json'      => \RateHub\GraphQL\Doctrine\Types\JsonType::class
+		];
+		$option->em = $em;
+
+		$provider = new DoctrineProvider('TestProvider', $option);
+
+		$this->setupSampleData($provider);
+
+		$schema = $this->_getGraphQLSchema($provider);
+
+		$obj = json_decode('{ id: 1 }');
+
+		$users = [[
+			"id" => 1,
+			"cities" => [
+				["id" => 1],
+				["id" => 2],
+				["id" => 3]
+			]
+		]];
+
+		$result = \GraphQL\GraphQL::execute(
+			$schema,
+			'mutation UpdateUser($items: [User__Input]){
+			  update_User(items: $items){
+			  	id,
+			  	cities{
+			  	  items{
+			  		id
+			  		name
+				  }
+			  	}
+			  }
+			}',
+			null,
+			new GraphContext(),
+			['items' => $users]
+		);
+
+		$provider->clearBuffers();
+
+		$I->assertEquals(1, count($result));
+
+		$I->assertEquals(1, count($result["data"]["update_User"]));
+
+		$userCities = $result["data"]["update_User"][0];
+
+		$I->assertEquals(1, $userCities["id"]);
+
+	//	$I->assertEquals(3, count($userCities["cities"]));
+
+		// Verify the database operation was successful
+
+		$pdo = $provider->getManager()->getConnection()->getWrappedConnection();
+
+		$dbResult = $pdo->query('SELECT * FROM gql001_usercity');
+
+		$dbResult->setFetchMode(\Doctrine\DBAL\Driver\PDOConnection::FETCH_ASSOC);
+
+		$rows = $dbResult->fetchAll();
+
+		$I->assertEquals(3, count($rows)); */
+
+
+	}
+
 
 }

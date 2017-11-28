@@ -2,12 +2,23 @@
 
 namespace RateHub\GraphQL\Doctrine;
 
+use RateHub\Extension\Doctrine\Hstore;
+use RateHub\GraphQL\Doctrine\Types\HstoreType;
 use RateHub\GraphQL\Interfaces\IGraphQLMutatorProvider;
+use RateHub\GraphQL\Doctrine\Resolvers\DoctrineToMany;
 
 use GraphQL\Type\Definition\ObjectType;
 use GraphQL\Type\Definition\Type;
 
 use Doctrine\ORM\Query;
+
+use Doctrine\ORM\Mapping\ClassMetadataInfo;
+
+use Doctrine\DBAL\Types\Type as DType;
+
+class GraphProxy{
+
+}
 
 /**
  * Class DoctrineMutators
@@ -110,26 +121,101 @@ class DoctrineMutators implements IGraphQLMutatorProvider{
 
 				foreach($args['items'] as $entityProperties){
 
+					$doctrineType = $this->_typeProvider->getDoctrineType($typeKey);
+
 					// Resolve the graph type to is doctrine entity class
-					$entityType = $this->_typeProvider->getTypeClass($typeKey);
+					$doctrineClass = $this->_typeProvider->getTypeClass($typeKey);
 
 					// Create the entity
-					$entity = new $entityType();
+					$entity = new $doctrineClass();
+
+					$graphEntityData = [];
+
+					// This will have to be recursive
 
 					// Populate the values
 					foreach($entityProperties as $name => $value){
 
-						if(method_exists($entity, 'set')) {
-							$entity->set($name, $value);
-						}else{
-							$entity->$name = $value;
+						if($doctrineType->hasAssociation($name)){
+
+							$association = $doctrineType->getAssociationMapping($name);
+
+							if ($association['type'] === ClassMetadataInfo::ONE_TO_ONE || $association['type'] === ClassMetadataInfo::MANY_TO_ONE){
+
+								$associationTypeKey = $this->_typeProvider->getTypeName($association['targetEntity']);
+								$associationClass = $this->_typeProvider->getTypeClass($associationTypeKey);
+								$associationType  = $this->_typeProvider->getDoctrineType($associationTypeKey);
+
+								$associationProperties = $value;
+
+								$identifiers = $associationType->getIdentifier();
+
+								$findId = array();
+								foreach ($identifiers as $id) {
+									$findId[$id] = $value[$id];
+								}
+
+								$relatedEntity = $em->find($associationClass, $findId);
+
+								if($relatedEntity === null) {
+
+									$relatedEntity = new $associationClass();
+
+									foreach ($associationProperties as $aname => $avalue) {
+
+										$relatedEntity->$aname = $avalue;
+
+									}
+
+									$em->persist($relatedEntity);
+
+								}
+
+								// We need to generate the graphEntityData as if it were retrieved with array hydration
+								foreach($identifiers as $id){
+
+									if (isset($association['joinColumns'])) {
+
+										foreach ($association['joinColumns'] as $col) {
+											$graphEntityData[$col['name']] = $relatedEntity->{$col['referencedColumnName']};
+										}
+
+									}else{
+
+										$graphEntityData[$id] = $relatedEntity->$id;
+
+									}
+
+								}
+
+								$entity->$name = $relatedEntity;
+
+							}else{
+
+								// Handle Many to Many
+
+
+							}
+
+
+
+						}else {
+
+							if (method_exists($entity, 'set')) {
+								$entity->set($name, $value);
+							} else {
+								$entity->$name = $value;
+							}
+
+							$graphEntityData[$name] = $value;
+
 						}
 
 					}
 
 					$em->persist($entity);
 
-					array_push($newEntities, $entity);
+					array_push($newEntities, new GraphEntity($graphEntityData, $entity));
 
 				}
 
@@ -177,9 +263,11 @@ class DoctrineMutators implements IGraphQLMutatorProvider{
 				$identifiers = $provider->getTypeIdentifiers($typeKey);
 
 				// Resolve the graph type to is doctrine entity class
-				$entityType = $this->_typeProvider->getTypeClass($typeKey);
+				$entityName = $this->_typeProvider->getTypeClass($typeKey);
 
-				$qb = $em->getRepository($entityType)->createQueryBuilder('e');
+				$entityType = $this->_typeProvider->getDoctrineType($typeKey);
+
+				$qb = $em->getRepository($entityName)->createQueryBuilder('e');
 
 				$idList = array();
 
@@ -226,98 +314,130 @@ class DoctrineMutators implements IGraphQLMutatorProvider{
 
 				}
 
-				// BUILD WHERE CLAUSES
+				$updatedResult = [];
 
-				// Single Identifier
-				if(count($identifiers) == 1) {
-
-					$fieldName = $identifiers[0];
-
-					$idValues = [];
-					foreach($idList as $id){
-						$idValues = $id[$fieldName];
-					}
-
-					$qb->andWhere($qb->expr()->in('e.' . $fieldName, ':' . $fieldName));
-					$qb->setParameter($fieldName, $idValues);
-
-				// Composite Identifier
-				}else{
-
-					$cnt = 0;
-
-					$orConditions = [];
-
-					foreach($idList as $id){
-
-						$recordConditions = [];
-
-						foreach($id as $fieldName => $fieldValue){
-
-							array_push($recordConditions, $qb->expr()->eq('e.' . $fieldName, ':' . $fieldName . $cnt));
-
-							$qb->setParameter($fieldName . $cnt, $fieldValue);
-
-						}
-
-						$andX = $qb->expr()->andX();
-						$andX->addMultiple($recordConditions);
-
-						array_push($orConditions, $andX);
-
-						$cnt++;
-
-					}
-
-					$orX = $qb->expr()->orX();
-					$orX->addMultiple($orConditions);
-
-					$qb->andWhere($orX);
-
-				}
-
-				$query = $qb->getQuery();
-				$query->setHint("doctrine.includeMetaColumns", true); // Include associations
-
-				$hydratedResult = array();
-
-				$graphHydrator = new GraphHydrator($em);
-
-				$results = $query->getResult(Query::HYDRATE_ARRAY);
+				$results = $this->getEntitiesById($entityType, $idList);
 
 				foreach ($results as $result) {
 
 					$idString = '';
 
-					foreach($identifiers as $identifier) {
-						$idString .= $result[$identifier];
+					foreach ($identifiers as $identifier) {
+						$idString .= $result->$identifier;
 					}
 
 					$updates = $entityPropertiesById[$idString];
 
-					// Hydrate before updating, what the changes to trigger unit of work update
-					$hydratedObject = $graphHydrator->hydrate($result, $entityType);
+					// Need to handle field types and associations
+					$doctrineType = $this->_typeProvider->getDoctrineType($typeKey);
 
-					foreach($updates as $name => $values){
+					$entity = $result;
 
-						$entity = $hydratedObject->getObject();
-						if(method_exists($entity, 'set')){
-							$entity->set($name, $values);
-						}else{
-							$entity->$name = $values;
+					$graphEntityData = [];
+
+					// This will have to be recursive
+
+					// Populate the values
+					foreach ($updates as $name => $value) {
+
+						if ($doctrineType->hasAssociation($name)) {
+
+							$association = $doctrineType->getAssociationMapping($name);
+
+							// HANDLE n-to-ONE
+							if ($association['type'] === ClassMetadataInfo::ONE_TO_ONE || $association['type'] === ClassMetadataInfo::MANY_TO_ONE) {
+
+								$associationTypeKey = $this->_typeProvider->getTypeName($association['targetEntity']);
+								$associationClass = $this->_typeProvider->getTypeClass($associationTypeKey);
+								$associationType = $this->_typeProvider->getDoctrineType($associationTypeKey);
+
+								$associationProperties = $value;
+
+								$identifiers = $associationType->getIdentifier();
+
+								$findId = array();
+								foreach ($identifiers as $id) {
+									if(isset($value[$id]))
+										$findId[$id] = $value[$id];
+								}
+
+								$relatedEntity = null;
+
+								if(count($findId) === count($identifiers)) {
+
+									$relatedEntity = $em->find($associationClass, $findId);
+
+									if ($relatedEntity === null) {
+
+										$relatedEntity = new $associationClass();
+
+										foreach ($associationProperties as $aname => $avalue) {
+
+											$relatedEntity->$aname = $avalue;
+
+										}
+
+										$em->persist($relatedEntity);
+
+									}
+
+									// We need to generate the graphEntityData as if it were retrieved with array hydration
+									foreach ($identifiers as $id) {
+
+										if (isset($association['joinColumns'])) {
+
+											foreach ($association['joinColumns'] as $col) {
+												$graphEntityData[$col['name']] = $relatedEntity->{$col['referencedColumnName']};
+											}
+
+										} else {
+
+											$graphEntityData[$id] = $relatedEntity->$id;
+
+										}
+
+									}
+
+								}
+
+								$entity->$name = $relatedEntity;
+
+							// HANDLE n-to-MANY
+							} else {
+
+								// TODO
+								$entity->$name = [];
+
+							}
+
+						} else {
+
+							$ftype = $doctrineType->getTypeOfField($name);
+
+							if($ftype === 'hstore' || $ftype === 'json') {
+								$value = (object)$value;
+							}
+
+							if (method_exists($entity, 'set')) {
+								$entity->set($name, $value);
+							} else {
+								$entity->$name = $value;
+							}
+
+							$graphEntityData[$name] = $value;
+
 						}
 
 					}
 
-					$em->getUnitOfWork()->scheduleForUpdate($hydratedObject->getObject());
-
-					array_push($hydratedResult, $hydratedObject);
+					$em->getUnitOfWork()->scheduleForUpdate($entity);
+					array_push($updatedResult, new GraphEntity($graphEntityData, $entity));
 
 				}
 
 				$em->flush();
 
-				return $hydratedResult;
+				return $updatedResult;
 
 			}
 
@@ -491,6 +611,111 @@ class DoctrineMutators implements IGraphQLMutatorProvider{
 		];
 
 		return $mutator;
+
+	}
+
+	/**
+	 * Get a list of entities by their id
+	 *
+	 * @param $typeProvider
+	 * @param $entityType
+	 * @param array $ids
+	 * @return array
+	 */
+	public function getEntitiesById($entityType, $ids = []){
+
+		if(count($ids) === 0){
+			return [];
+		}
+
+		$em = $this->_typeProvider->getManager();
+
+		$identifiers = $entityType->getIdentifier();
+
+		$queryBuilder = $this->_typeProvider->getRepository($entityType->getName())->createQueryBuilder('e');
+
+		$cnt = 0;
+
+		$orConditions = [];
+
+		$idList = [];
+
+		// Single Identifier
+		if (count($identifiers) === 1) {
+
+			//$idList = [];
+
+			$idField = $identifiers[0];
+
+			foreach($ids as $id){
+				array_push($idList, $id[$idField]);
+			}
+
+			$queryBuilder->andWhere($queryBuilder->expr()->in('e.' . $idField, ':' . $idField . $cnt));
+			$queryBuilder->setParameter($idField . $cnt, $idList);
+
+		// Composite Identifier
+		}else {
+
+			foreach($ids as $id) {
+
+				$recordConditions = [];
+
+				foreach ($id as $fieldName => $fieldValue) {
+
+					array_push($recordConditions, $queryBuilder->expr()->eq('e.' . $fieldName, ':' . $fieldName . $cnt));
+
+					$queryBuilder->setParameter($fieldName . $cnt, $fieldValue);
+
+				}
+
+				$andX = $queryBuilder->expr()->andX();
+				$andX->addMultiple($recordConditions);
+
+				array_push($orConditions, $andX);
+
+				$cnt++;
+
+			}
+
+			$orX = $queryBuilder->expr()->orX();
+			$orX->addMultiple($orConditions);
+
+			$queryBuilder->andWhere($orX);
+
+		}
+
+		$joins = [];
+
+		foreach ($entityType->getAssociationMappings() as $name=>$association) {
+
+			$join = 'e.'.$name;
+			$alias = 'e'.count($joins);
+
+			$queryBuilder->addSelect($alias)->leftJoin('e.'.$name, $alias);
+			$joins[$join] = $alias;
+
+			$targetClass = $em->getClassMetadata($association['targetEntity']);
+			$targetAssociations = $targetClass->getAssociationMappings();
+
+			foreach ($targetAssociations as $name=>$association) {
+
+				$join = $alias.'.'.$name;
+				$talias = 'e'.count($joins);
+				$queryBuilder->addSelect($talias)->leftJoin($join, $talias);
+				$joins[$join] = $talias;
+
+			}
+
+		}
+
+		$query = $queryBuilder->getQuery();
+		$query->setHint("doctrine.includeMetaColumns", true);
+
+		// Use array hydration only. GraphHydrator will handle hydration of doctrine objects.
+		$results = $query->getResult();
+
+		return $results;
 
 	}
 
