@@ -8,7 +8,9 @@ use Doctrine\Common\Annotations\AnnotationRegistry;
 class TestDb
 {
 
-    public static function createEntityManager($path){
+    public static function createEntityManager($schema){
+
+		$path = './tests/_data/schemas/' . strtolower($schema);
 
         $paths = array($path);
         $isDevMode = true;
@@ -37,5 +39,27 @@ class TestDb
         return $entityManager;
 
     }
+
+	public static function dropTable($em, $table){
+
+		$checkSql = "SELECT * FROM information_schema.tables WHERE table_name='" . $table . "'";
+		$checkResult = $em->getConnection()->executeQuery($checkSql);
+
+		if ($checkResult->fetch()) {
+			$em->getConnection()->executeUpdate('DROP TABLE ' . $table);
+		}
+
+	}
+
+	public static function dropSequence($em, $sequence){
+
+		$checkSql = "SELECT * FROM information_schema.sequences WHERE sequence_name='" . $sequence . "'";
+		$checkResult = $em->getConnection()->executeQuery($checkSql);
+
+		if ($checkResult->fetch()) {
+			$em->getConnection()->executeUpdate('DROP SEQUENCE ' . $sequence);
+		}
+
+	}
 
 }

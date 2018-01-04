@@ -173,6 +173,8 @@ class DoctrineMutators implements IGraphQLMutatorProvider{
 								}
 
 								// We need to generate the graphEntityData as if it were retrieved with array hydration
+								// Only concerned with the identifiers as they'll be used to retrieve the related records
+								// as part of building the final result
 								foreach($identifiers as $id){
 
 									if (isset($association['joinColumns'])) {
@@ -221,34 +223,12 @@ class DoctrineMutators implements IGraphQLMutatorProvider{
 												$inverseCollection->add($entity);
 											}
 
-											$entityAsArray = [];
-
-											$identifiers = $associationType->getIdentifier();
-
-											// We need to generate the graphEntityData as if it were retrieved with array hydration
-											if (isset($association['joinColumns'])) {
-
-												foreach ($association['joinColumns'] as $col) {
-													$entityAsArray[$col['name']] = $associatedEntity->{$col['referencedColumnName']};
-												}
-
-											}else{
-
-												foreach($identifiers as $id) {
-													$entityAsArray[$id] = $associatedEntity->$id;
-												}
-
-											}
-
-											array_push($array_collection, $entityAsArray);
-
 										}
 
 									}
 								}
 
 								$entity->$name = $collection;
-								$graphEntityData[$name] = $array_collection;
 
 							}
 
@@ -426,6 +406,8 @@ class DoctrineMutators implements IGraphQLMutatorProvider{
 
 									$relatedEntity = $em->find($associationClass, $findId);
 
+									// Try to find the related entity, if one cannot be found then
+									// create it.
 									if ($relatedEntity === null) {
 
 										$relatedEntity = new $associationClass();
@@ -441,12 +423,16 @@ class DoctrineMutators implements IGraphQLMutatorProvider{
 									}
 
 									// We need to generate the graphEntityData as if it were retrieved with array hydration
+									// Only concerned with the identifiers as they'll be used to retrieve the related records
+									// as part of building the final result
 									foreach ($identifiers as $id) {
 
+										// joinColumns is set for a many to one association
 										if (isset($association['joinColumns'])) {
 
 											foreach ($association['joinColumns'] as $col) {
 												$graphEntityData[$col['name']] = $relatedEntity->{$col['referencedColumnName']};
+												$entity->{$col['name']} = $relatedEntity->{$col['referencedColumnName']};
 											}
 
 										} else {
