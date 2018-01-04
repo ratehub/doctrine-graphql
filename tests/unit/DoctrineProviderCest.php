@@ -14,6 +14,7 @@ use DoctrineGraph\Schema\GQL001\GQL001_City;
 use DoctrineGraph\Schema\GQL001\GQL001_Interest;
 use DoctrineGraph\Schema\GQL001\GQL001_Province;
 use DoctrineGraph\Schema\GQL001\GQL001_Location;
+use DoctrineGraph\Schema\GQL001\GQL001_Sector;
 
 use Doctrine\DBAL\Types\Type;
 
@@ -32,11 +33,13 @@ class DoctrineProviderCest
 
 		$this->_dropTable($em, 'gql001_project');
         $this->_dropTable($em, 'gql001_interest');
+		$this->_dropTable($em, 'gql001_usersector');
         $this->_dropTable($em, 'gql001_usercity');
 		$this->_dropTable($em, 'gql001_user');
         $this->_dropTable($em, 'gql001_city');
         $this->_dropTable($em, 'gql001_province');
 		$this->_dropTable($em, 'gql001_location');
+		$this->_dropTable($em, 'gql001_sector');
 
         $this->_dropSequence($em, 'gql001_project_id_seq');
         $this->_dropSequence($em, 'gql001_user_id_seq');
@@ -116,6 +119,12 @@ class DoctrineProviderCest
 		$location->setPrimaryKey(['lat', 'long']);
 		$sm->createTable($location);
 
+		/* SECTOR */
+		$location = new Table("gql001_sector");
+		$location->addColumn('id', 'string');
+		$location->addColumn('num', 'integer');
+		$location->setPrimaryKey(['id', 'num']);
+		$sm->createTable($location);
 
         /* CITY */
         $city = new Table("gql001_city");
@@ -140,6 +149,16 @@ class DoctrineProviderCest
         $usercity->addForeignKeyConstraint('gql001_user', ['user_id'], ['id']);
         $usercity->addForeignKeyConstraint('gql001_city', ['city_id'], ['id']);
         $sm->createTable($usercity);
+
+
+		/* USER SECTOR */
+		$usersector = new Table("gql001_usersector");
+		$usersector->addColumn('sector_id', 'string');
+		$usersector->addColumn('sector_num', 'integer');
+		$usersector->addColumn('user_id', 'integer');
+		$usersector->addForeignKeyConstraint('gql001_user',		['user_id'],	['id']);
+		$usersector->addForeignKeyConstraint('gql001_sector',	['sector_id', 'sector_num'],	['id', 'num']);
+		$sm->createTable($usersector);
 
 
         /* INTEREST */
@@ -211,7 +230,7 @@ class DoctrineProviderCest
 
         $types = $provider->getTypes();
 
-        $I->assertEquals(15, count($types));
+        $I->assertEquals(16, count($types));
 
         $userType = $provider->getType('User');
 
@@ -373,6 +392,21 @@ class DoctrineProviderCest
 		 $city3->province = $province;
 		 $city3->location = $location;
 		 $em->persist($city3);
+
+		 $sector1 = new GQL001_Sector();
+		 $sector1->id 	= 'A';
+		 $sector1->num 	= 1;
+		 $em->persist($sector1);
+
+		 $sector2 = new GQL001_Sector();
+		 $sector2->id 	= 'B';
+		 $sector2->num 	= 2;
+		 $em->persist($sector2);
+
+		 $sector3 = new GQL001_Sector();
+		 $sector3->id 	= 'C';
+		 $sector3->num 	= 3;
+		 $em->persist($sector3);
 
 		 $em->flush();
 
@@ -1372,13 +1406,83 @@ class DoctrineProviderCest
 
 	/**
 	 * Scenario:
-	 * Create a record with the mutator
+	 * Create a user record with the mutator and relate it to multiple existing
+	 * sectors. Tests to Many-To-Many association in the create mutator
+	 *
+	 * @param UnitTester $I
+	 */
+	public function createUserWithMultipleExistingSectors (UnitTester $I){
+
+		$I->wantTo('Create an user record linked to multiple sectors (composite key)');
+
+		$em = TestDb::createEntityManager('./tests/_data/schemas/default');
+
+		$this->_setupSchemaGQL001($em);
+
+		$option = new DoctrineProviderOptions();
+		$option->scalars = [
+			'datetime'  => \RateHub\GraphQL\Doctrine\Types\DateTimeType::class,
+			'array'     => \RateHub\GraphQL\Doctrine\Types\ArrayType::class,
+			'bigint'    => \RateHub\GraphQL\Doctrine\Types\BigIntType::class,
+			'hstore'    => \RateHub\GraphQL\Doctrine\Types\HstoreType::class,
+			'json'      => \RateHub\GraphQL\Doctrine\Types\JsonType::class
+		];
+		$option->em = $em;
+
+		$provider = new DoctrineProvider('TestProvider', $option);
+
+		$this->setupSampleData($provider);
+
+		$schema = $this->_getGraphQLSchema($provider);
+
+		$users = [
+			[
+				"created_at" => 946688400, // 2000/1/1 01:00:00 UTC
+				"sectors" => [
+					["id" => "A", "num" => 1]
+				]
+			]
+		];
+
+		$result = \GraphQL\GraphQL::execute(
+			$schema,
+			'mutation CreateUser($items: [User__Input]){
+			  create_User(items: $items){
+			  	id
+			  	sectors{
+			  		items{
+						id
+						num
+					}
+			  	}
+			  }
+			}',
+			null,
+			new GraphContext(),
+			['items' => $users]
+		);
+
+		$provider->clearBuffers();
+
+		$I->assertEquals(1, count($result));
+
+		$I->assertEquals(1, count($result["data"]["create_User"]));
+
+		$users = $result["data"]["create_User"][0];
+
+		$I->assertEquals(3, $users["id"]);
+
+	}
+
+	/**
+	 * Scenario:
+	 * Add multiple existing cities to a user. Testing the n-to-many mutators
 	 *
 	 * @param UnitTester $I
 	 */
 	public function updateUserAddMultipleExistingCities (UnitTester $I){
 
-/*		$I->wantTo('Update user add multiple existing cities');
+		$I->wantTo('Update user add multiple existing cities');
 
 		$em = TestDb::createEntityManager('./tests/_data/schemas/default');
 
@@ -1439,7 +1543,7 @@ class DoctrineProviderCest
 
 		$I->assertEquals(1, $userCities["id"]);
 
-	//	$I->assertEquals(3, count($userCities["cities"]));
+		$I->assertEquals(3, count($userCities["cities"]["items"]));
 
 		// Verify the database operation was successful
 
@@ -1451,7 +1555,288 @@ class DoctrineProviderCest
 
 		$rows = $dbResult->fetchAll();
 
-		$I->assertEquals(3, count($rows)); */
+		$I->assertEquals(3, count($rows));
+
+
+	}
+
+	/**
+	 * Scenario:
+	 * Remove multiple existing cities from a user. Testing the n-to-many mutators
+	 *
+	 * @param UnitTester $I
+	 */
+	public function updateUserRemoveMultipleExistingCities (UnitTester $I){
+
+		$I->wantTo('Update user remove existing related cities');
+
+		$em = TestDb::createEntityManager('./tests/_data/schemas/default');
+
+		$this->_setupSchemaGQL001($em);
+
+		$option = new DoctrineProviderOptions();
+		$option->scalars = [
+			'datetime'  => \RateHub\GraphQL\Doctrine\Types\DateTimeType::class,
+			'array'     => \RateHub\GraphQL\Doctrine\Types\ArrayType::class,
+			'bigint'    => \RateHub\GraphQL\Doctrine\Types\BigIntType::class,
+			'hstore'    => \RateHub\GraphQL\Doctrine\Types\HstoreType::class,
+			'json'      => \RateHub\GraphQL\Doctrine\Types\JsonType::class
+		];
+		$option->em = $em;
+
+		$provider = new DoctrineProvider('TestProvider', $option);
+
+		$this->setupSampleData($provider);
+
+		$user = $em->getRepository(GQL001_User::class)->find(1);
+
+		$city2 = $em->getRepository(GQL001_City::class)->find(2);
+		$city3 = $em->getRepository(GQL001_City::class)->find(3);
+
+		$user->cities->add($city2);
+		$user->cities->add($city3);
+
+		$em->flush($user);
+
+		$schema = $this->_getGraphQLSchema($provider);
+
+		$obj = json_decode('{ id: 1 }');
+
+		$users = [[
+			"id" => 1,
+			"cities" => [
+				["id" => 1],
+				["id" => 3]
+			]
+		]];
+
+		$result = \GraphQL\GraphQL::execute(
+			$schema,
+			'mutation UpdateUser($items: [User__Input]){
+			  update_User(items: $items){
+			  	id,
+			  	cities{
+			  	  items{
+			  		id
+			  		name
+				  }
+			  	}
+			  }
+			}',
+			null,
+			new GraphContext(),
+			['items' => $users]
+		);
+
+		$provider->clearBuffers();
+
+		$I->assertEquals(1, count($result));
+
+		$I->assertEquals(1, count($result["data"]["update_User"]));
+
+		$userCities = $result["data"]["update_User"][0];
+
+		$I->assertEquals(1, $userCities["id"]);
+
+		$I->assertEquals(2, count($userCities["cities"]["items"]));
+
+		// Verify the database operation was successful
+
+		$pdo = $provider->getManager()->getConnection()->getWrappedConnection();
+
+		$dbResult = $pdo->query('SELECT * FROM gql001_usercity');
+
+		$dbResult->setFetchMode(\Doctrine\DBAL\Driver\PDOConnection::FETCH_ASSOC);
+
+		$rows = $dbResult->fetchAll();
+
+		$I->assertEquals(2, count($rows));
+
+
+	}
+
+	/**
+	 * Scenario:
+	 * Add multiple existing cities to a user. Testing the n-to-many mutators
+	 * with a entity having a composite identifier.
+	 *
+	 * @param UnitTester $I
+	 */
+	public function updateUserAddMultipleExistingSectors (UnitTester $I){
+
+		$I->wantTo('Update user add multiple existing sectors (composite key)');
+
+		$em = TestDb::createEntityManager('./tests/_data/schemas/default');
+
+		$this->_setupSchemaGQL001($em);
+
+		$option = new DoctrineProviderOptions();
+		$option->scalars = [
+			'datetime'  => \RateHub\GraphQL\Doctrine\Types\DateTimeType::class,
+			'array'     => \RateHub\GraphQL\Doctrine\Types\ArrayType::class,
+			'bigint'    => \RateHub\GraphQL\Doctrine\Types\BigIntType::class,
+			'hstore'    => \RateHub\GraphQL\Doctrine\Types\HstoreType::class,
+			'json'      => \RateHub\GraphQL\Doctrine\Types\JsonType::class
+		];
+		$option->em = $em;
+
+		$provider = new DoctrineProvider('TestProvider', $option);
+
+		$this->setupSampleData($provider);
+
+		$schema = $this->_getGraphQLSchema($provider);
+
+		$obj = json_decode('{ id: 1 }');
+
+		$sectors = [[
+			"id" => 1,
+			"sectors" => [
+				["id" => 'A', "num" => 1],
+				["id" => 'B', "num" => 2],
+				["id" => 'C', "num" => 3]
+			]
+		]];
+
+		$result = \GraphQL\GraphQL::execute(
+			$schema,
+			'mutation UpdateUser($items: [User__Input]){
+			  update_User(items: $items){
+			  	id,
+			  	sectors{
+			  	  items{
+			  		id
+			  		num
+				  }
+			  	}
+			  }
+			}',
+			null,
+			new GraphContext(),
+			['items' => $sectors]
+		);
+
+		$provider->clearBuffers();
+
+		$I->assertEquals(1, count($result));
+
+		$I->assertEquals(1, count($result["data"]["update_User"]));
+
+		$userSectors = $result["data"]["update_User"][0];
+
+		$I->assertEquals(1, $userSectors["id"]);
+
+		$I->assertEquals(3, count($userSectors["sectors"]["items"]));
+
+		// Verify the database operation was successful
+
+		$pdo = $provider->getManager()->getConnection()->getWrappedConnection();
+
+		$dbResult = $pdo->query('SELECT * FROM gql001_usersector');
+
+		$dbResult->setFetchMode(\Doctrine\DBAL\Driver\PDOConnection::FETCH_ASSOC);
+
+		$rows = $dbResult->fetchAll();
+
+		$I->assertEquals(3, count($rows));
+
+
+	}
+
+	/**
+	 * Scenario:
+	 * Remove multiple existing cities to a user. Testing the n-to-many mutators
+	 * with a entity having a composite identifier.
+	 *
+	 * @param UnitTester $I
+	 */
+	public function updateUserRemoveMultipleExistingSectors (UnitTester $I){
+
+		$I->wantTo('Update user remove multiple existing sectors (composite key)');
+
+		$em = TestDb::createEntityManager('./tests/_data/schemas/default');
+
+		$this->_setupSchemaGQL001($em);
+
+		$option = new DoctrineProviderOptions();
+		$option->scalars = [
+			'datetime'  => \RateHub\GraphQL\Doctrine\Types\DateTimeType::class,
+			'array'     => \RateHub\GraphQL\Doctrine\Types\ArrayType::class,
+			'bigint'    => \RateHub\GraphQL\Doctrine\Types\BigIntType::class,
+			'hstore'    => \RateHub\GraphQL\Doctrine\Types\HstoreType::class,
+			'json'      => \RateHub\GraphQL\Doctrine\Types\JsonType::class
+		];
+		$option->em = $em;
+
+		$provider = new DoctrineProvider('TestProvider', $option);
+
+		$this->setupSampleData($provider);
+
+		$user = $em->getRepository(GQL001_User::class)->find(1);
+
+		$sector1 = $em->getRepository(GQL001_Sector::class)->find(['id' => 'A', 'num' => 1]);
+		$sector2 = $em->getRepository(GQL001_Sector::class)->find(['id' => 'B', 'num' => 2]);
+		$sector3 = $em->getRepository(GQL001_Sector::class)->find(['id' => 'C', 'num' => 3]);
+
+		$user->sectors->add($sector1);
+		$user->sectors->add($sector2);
+		$user->sectors->add($sector3);
+
+		$em->flush();
+
+
+		$schema = $this->_getGraphQLSchema($provider);
+
+		$obj = json_decode('{ id: 1 }');
+
+		$sectors = [[
+			"id" => 1,
+			"sectors" => [
+				["id" => 'A', "num" => 1],
+				["id" => 'C', "num" => 3]
+			]
+		]];
+
+		$result = \GraphQL\GraphQL::execute(
+			$schema,
+			'mutation UpdateUser($items: [User__Input]){
+			  update_User(items: $items){
+			  	id,
+			  	sectors{
+			  	  items{
+			  		id
+			  		num
+				  }
+			  	}
+			  }
+			}',
+			null,
+			new GraphContext(),
+			['items' => $sectors]
+		);
+
+		$provider->clearBuffers();
+
+		$I->assertEquals(1, count($result));
+
+		$I->assertEquals(1, count($result["data"]["update_User"]));
+
+		$userSectors = $result["data"]["update_User"][0];
+
+		$I->assertEquals(1, $userSectors["id"]);
+
+		$I->assertEquals(2, count($userSectors["sectors"]["items"]));
+
+		// Verify the database operation was successful
+
+		$pdo = $provider->getManager()->getConnection()->getWrappedConnection();
+
+		$dbResult = $pdo->query('SELECT * FROM gql001_usersector');
+
+		$dbResult->setFetchMode(\Doctrine\DBAL\Driver\PDOConnection::FETCH_ASSOC);
+
+		$rows = $dbResult->fetchAll();
+
+		$I->assertEquals(2, count($rows));
 
 
 	}

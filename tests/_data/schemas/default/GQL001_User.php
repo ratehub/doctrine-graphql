@@ -30,6 +30,20 @@ class GQL001_User {
      */
 	public $cities;
 
+	/**
+	 * @ManyToMany(targetEntity="GQL001_Sector", inversedBy="users")
+	 * @JoinTable(name="gql001_usersector",
+	 *     joinColumns={
+	 *     		@JoinColumn(name="user_id", referencedColumnName="id")},
+	 * 	   inverseJoinColumns={
+	 *     		 @JoinColumn(name="sector_id", referencedColumnName="id"),
+	 *     		 @JoinColumn(name="sector_num", referencedColumnName="num")})
+	 * 	@GraphQLProperty(
+	 * 		include=true)
+	 */
+	public $sectors;
+
+
     /**
      * @OneToMany(targetEntity="GQL001_Interest", mappedBy="user")
      * @GraphQLProperty(

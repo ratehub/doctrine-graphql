@@ -13,6 +13,7 @@ use GraphQL\Type\Definition\Type;
 use Doctrine\ORM\Query;
 
 use Doctrine\ORM\Mapping\ClassMetadataInfo;
+use Doctrine\Common\Collections\ArrayCollection;
 
 use Doctrine\DBAL\Types\Type as DType;
 
@@ -192,11 +193,64 @@ class DoctrineMutators implements IGraphQLMutatorProvider{
 
 							}else{
 
-								// Handle Many to Many
+									// Handle Many to Many
 
+								$associationTypeKey = $this->_typeProvider->getTypeName($association['targetEntity']);
+								$associationClass = $this->_typeProvider->getTypeClass($associationTypeKey);
+								$associationType = $this->_typeProvider->getDoctrineType($associationTypeKey);
+
+								$collection = new ArrayCollection(); // $entity->$name;
+
+								$array_collection = []; // Used to store data as if it had be retrieved via array hydration
+
+								$values = $value;
+
+								if ($values) {
+
+									$associatedEntities = $this->getEntitiesById($associationType, $values);
+
+									foreach ($associatedEntities as $associatedEntity) {
+
+										if (!$collection->contains($associatedEntity)) {
+											// add new item
+											$collection->add($associatedEntity);
+
+											// update inverse collection
+											$inverseCollection = $associatedEntity->{$association['inversedBy']};
+											if (!$inverseCollection->contains($entity)) {
+												$inverseCollection->add($entity);
+											}
+
+											$entityAsArray = [];
+
+											$identifiers = $associationType->getIdentifier();
+
+											// We need to generate the graphEntityData as if it were retrieved with array hydration
+											if (isset($association['joinColumns'])) {
+
+												foreach ($association['joinColumns'] as $col) {
+													$entityAsArray[$col['name']] = $associatedEntity->{$col['referencedColumnName']};
+												}
+
+											}else{
+
+												foreach($identifiers as $id) {
+													$entityAsArray[$id] = $associatedEntity->$id;
+												}
+
+											}
+
+											array_push($array_collection, $entityAsArray);
+
+										}
+
+									}
+								}
+
+								$entity->$name = $collection;
+								$graphEntityData[$name] = $array_collection;
 
 							}
-
 
 
 						}else {
@@ -214,6 +268,11 @@ class DoctrineMutators implements IGraphQLMutatorProvider{
 					}
 
 					$em->persist($entity);
+
+					$identifiers = $doctrineType->getIdentifier();
+					foreach($identifiers as $id) {
+						$graphEntityData[$id] = $entity->$id;
+					}
 
 					array_push($newEntities, new GraphEntity($graphEntityData, $entity));
 
@@ -405,8 +464,50 @@ class DoctrineMutators implements IGraphQLMutatorProvider{
 							// HANDLE n-to-MANY
 							} else {
 
-								// TODO
-								$entity->$name = [];
+								$associationTypeKey = $this->_typeProvider->getTypeName($association['targetEntity']);
+								$associationClass = $this->_typeProvider->getTypeClass($associationTypeKey);
+								$associationType = $this->_typeProvider->getDoctrineType($associationTypeKey);
+
+								$collection = $entity->$name;
+
+								// make a copy to keep track of which items we've seen
+								$originalCollection = clone($collection);
+
+								$values = $value;
+
+								if ($values) {
+
+									$associatedEntities = $this->getEntitiesById($associationType, $values);
+
+									foreach ($associatedEntities as $associatedEntity) {
+
+										if (!$collection->contains($associatedEntity)) {
+											// add new item
+											$collection->add($associatedEntity);
+
+											// update inverse collection
+											$inverseCollection = $associatedEntity->{$association['inversedBy']};
+											if (!$inverseCollection->contains($entity)) {
+												$inverseCollection->add($entity);
+											}
+										}
+
+										// remove any items we see from the copied collection, anything left needs to be removed
+										$originalCollection->removeElement($associatedEntity);
+									}
+								}
+
+								// remove items still left in the copied collection
+								foreach ($originalCollection as $removed) {
+									$collection->removeElement($removed);
+
+									// update inverse collection
+									$inverseCollection = $removed->{$association['inversedBy']};
+									if ($inverseCollection->contains($entity)) {
+										$inverseCollection->removeElement($entity);
+									}
+								}
+
 
 							}
 
