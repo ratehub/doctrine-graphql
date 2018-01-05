@@ -130,7 +130,7 @@ class DoctrineMutators implements IGraphQLMutatorProvider{
 					// Create the entity
 					$entity = new $doctrineClass();
 
-					$graphEntityData = [];
+					$graphEntityData = $em->getUnitOfWork()->getOriginalEntityData($entity);
 
 					// This will have to be recursive
 
@@ -372,9 +372,7 @@ class DoctrineMutators implements IGraphQLMutatorProvider{
 
 					$entity = $result;
 
-					$graphEntityData = [];
-
-					// This will have to be recursive
+					$graphEntityData = $em->getUnitOfWork()->getOriginalEntityData($entity);
 
 					// Populate the values
 					foreach ($updates as $name => $value) {
@@ -501,7 +499,9 @@ class DoctrineMutators implements IGraphQLMutatorProvider{
 
 							$ftype = $doctrineType->getTypeOfField($name);
 
-							if($ftype === 'hstore' || $ftype === 'json') {
+							$graphEntityData[$name] = $value;
+
+							if($ftype === 'hstore' || $ftype === 'json'){
 								$value = (object)$value;
 							}
 
@@ -511,7 +511,7 @@ class DoctrineMutators implements IGraphQLMutatorProvider{
 								$entity->$name = $value;
 							}
 
-							$graphEntityData[$name] = $value;
+
 
 						}
 
