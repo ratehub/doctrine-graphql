@@ -15,6 +15,9 @@ use GraphQL\Type\Definition\ObjectType;
 use GraphQL\Type\Definition\InputObjectType;
 use GraphQL\Type\Definition\InterfaceType;
 
+use RateHub\GraphQL\Doctrine\Authorization\AuthorizationHandler;
+use RateHub\GraphQL\Doctrine\Authorization\ObjectPermission;
+use RateHub\GraphQL\Doctrine\Authorization\FieldPermission;
 use RateHub\GraphQL\Doctrine\Types\DateTimeType;
 
 use RateHub\GraphQL\Doctrine\Resolvers\DoctrineField;
@@ -23,6 +26,10 @@ use RateHub\GraphQL\Doctrine\Resolvers\DoctrineToMany;
 use RateHub\GraphQL\Doctrine\Resolvers\DoctrineToOne;
 
 use Doctrine\Common\Annotations\SimpleAnnotationReader;
+
+use GraphQL\Type\Definition\Directive;
+use GraphQL\Type\Definition\DirectiveLocation;
+use GraphQL\Type\Definition\FieldArgument;
 
 
 /**
@@ -172,16 +179,29 @@ class DoctrineProvider Implements IGraphQLProvider {
 	 */
 	private $_permissionsByType;
 
+	/**
+	 * @var AuthorizationHandler Verifies a users permissions
+	 */
+	private $_authorizeHandler;
+
 
 	/**
 	 * DoctrineTypeRegistry constructor.
 	 * @param EntityManagerInterface $em
 	 */
-	public function __construct($name, $options) {
+	public function __construct($name, $options, $authorizeHandler = null) {
 
 		$this->_name = $name;
 
 		$this->_options = $options;
+
+		if($authorizeHandler == null) {
+			$this->_authorizeHandler = new AuthorizationHandler();
+		}else{
+			$this->_authorizeHandler = $authorizeHandler;
+		}
+
+		$this->_permissionsByType = [];
 
 		// Define the base config path for convenience
 		$this->_configBase = 'graphql.providers.' . $name;
@@ -213,10 +233,13 @@ class DoctrineProvider Implements IGraphQLProvider {
 
 			$annotation = $this->_reader->getClassAnnotation($class, self::ANNOTATION_TYPE);
 
-			$permissions = $this->initPermissions($annotation);
+			$name = $this->getGraphName($metaType, $annotation);
 
 			// Run the type through the whitelist/blacklist filter
-			if($permissions->hasAccess()) {
+			// Run the type through the authorization provider
+			$permissions = $this->initObjectPermissions($name,  $annotation);
+
+			if($permissions->hasRead()) {
 
 				$this->initializeObjectType($metaType, $annotation, $permissions);
 
@@ -227,15 +250,49 @@ class DoctrineProvider Implements IGraphQLProvider {
 	}
 
 	/**
+	 * Initialize the different object level permissions.
+	 *
+	 * @param $name
+	 * @param $annotation
+	 * @return mixed
+	 */
+	private function initObjectPermissions($name, $annotation){
+
+		$permissions = new ObjectPermission($name);
+
+		$permissions->setCreate($this->verifyAccess($permissions->getCreatePermissionName(), $annotation));
+		$permissions->setRead($this->verifyAccess($permissions->getReadPermissionName(), $annotation));
+		$permissions->setEdit($this->verifyAccess($permissions->getEditPermissionName(), $annotation));
+		$permissions->setDelete($this->verifyAccess($permissions->getDeletePermissionName(), $annotation));
+
+		return $permissions;
+
+	}
+
+	private function initFieldPermissions($objectPermissions, $name, $annotation){
+
+		$fieldPermissions = new FieldPermission($objectPermissions->name . '.' . $name);
+
+		$objectPermissions->addFieldPermission($fieldPermissions);
+
+		$fieldPermissions->setRead($this->verifyAccess($fieldPermissions->getReadPermissionName(), $annotation));
+		$fieldPermissions->setEdit($this->verifyAccess($fieldPermissions->getEditPermissionName(), $annotation));
+
+		return $fieldPermissions;
+
+	}
+
+
+	/**
 	 * Perform the blacklist/whitelist filtering and generate namespace permissions based on the current setting. Check
 	 * the annotation to determine if various operations should be allowed or not.
 	 *
 	 * @param $annotation
 	 * @return Permission
 	 */
-	private function initPermissions($annotation){
+	private function verifyAccess($name, $annotation){
 
-		$permissions = new Permission();
+		$hasAccess = false;
 
 		// Currently running in whitelist mode. Only items marked for inclusion will
 		// be included
@@ -244,7 +301,7 @@ class DoctrineProvider Implements IGraphQLProvider {
 			if($annotation !== null && $annotation->include === true) {
 
 				// Passed  Whitelist filter, check namespaces
-				$this->applyCred($annotation, $permissions);
+				$hasAccess = $this->_authorizeHandler->hasAccess($name);
 
 			}
 
@@ -254,66 +311,19 @@ class DoctrineProvider Implements IGraphQLProvider {
 
 			if($annotation !== null && $annotation->include !== false) {
 
-				// Passed Blacklist filter, check namespaces
-				$this->applyCred($annotation, $permissions);
+				// Passed Blacklist filter, check authorization provider
+				$hasAccess = $this->_authorizeHandler->hasAccess($name);
 
 			}else if($annotation === null){
 
-				// Passed Blacklist filter, check namespaces
-				$this->applyCred($annotation, $permissions);
+				// Passed Blacklist filter, check authorization provider
+				$hasAccess = $this->_authorizeHandler->hasAccess($name);
 
 			}
 
 		}
 
-		return $permissions;
-
-	}
-
-	/**
-	 * Verify the context namespace against the required list.
-	 *
-	 * @param $annotation The annotation for the current property or type.
-	 * @return bool
-	 */
-	private function applyCred($annotation, &$permissions){
-
-		$namespaces = $annotation->namespaces;
-
-		// If no namespaces are specified the assume access to all
-		if($namespaces === null){
-
-			$permissions->create	= true;
-			$permissions->read		= true;
-			$permissions->edit		= true;
-			$permissions->delete	= true;
-
-		}else {
-
-			// Verify the context namespace against the required list
-			foreach ($namespaces as $namespace => $operations) {
-
-				// If the current context has even one of the required namespaces
-				// then pass the namespace filter;
-				if ($this->_options->context->namespaces !== null && in_array($namespace, $this->_options->context->namespaces)) {
-
-					if (strpos( $operations, 'c') !== false)
-						$permissions->create = true;
-
-					if (strpos( $operations, 'r') !== false)
-						$permissions->read = true;
-
-					if (strpos( $operations, 'e') !== false)
-						$permissions->edit = true;
-
-					if (strpos( $operations, 'd') !== false)
-						$permissions->delete = true;
-
-				}
-
-			}
-
-		}
+		return $hasAccess;
 
 	}
 
@@ -345,6 +355,20 @@ class DoctrineProvider Implements IGraphQLProvider {
 
 	}
 
+	private function getGraphName($entityMetaType, $annotation){
+
+		$doctrineClass = $entityMetaType->getName();
+		$name = str_replace('\\', '__', $doctrineClass);
+
+		// Set the name via annotation if an override is set
+		if($annotation !== null && $annotation->name !== null) {
+			$name = $annotation->name;
+		}
+
+		return $name;
+
+	}
+
 	/**
 	 * Initializes the complex object types based on the doctrine metadata.
 	 *
@@ -357,12 +381,8 @@ class DoctrineProvider Implements IGraphQLProvider {
 		$config = array();
 
 		$doctrineClass = $entityMetaType->getName();
-		$name = str_replace('\\', '__', $doctrineClass);
 
-		// Set the name via annotation if an override is set
-		if($annotation !== null && $annotation->name !== null) {
-			$name = $annotation->name;
-		}
+		$name = $this->getGraphName($entityMetaType, $annotation);
 
 		// Setup some core data
 		$this->_permissionsByType[$name] 	= $permissions;
@@ -416,11 +436,11 @@ class DoctrineProvider Implements IGraphQLProvider {
 			// Attempt to retrieve the property annotation
 			$annotation = $this->_reader->getPropertyAnnotation($class->getProperty($fieldName), self::ANNOTATION_PROPERTY);
 
-			$propertyPermissions = $this->initPermissions($annotation);
+			$propertyPermission = $this->initFieldPermissions($permissions, ($annotation->name === null ? $fieldName : $annotation->name), $annotation);
 
 			// Check to see if this property should be included via the
 			// blacklist/whitelist filtering
-			if($propertyPermissions->hasAccess()) {
+			if($propertyPermission->hasRead()) {
 
 				// Check to see if we have a resolver override for the current property
 				$resolverClass 		= null;
@@ -494,49 +514,54 @@ class DoctrineProvider Implements IGraphQLProvider {
 
 			$methodName = $method->name;
 
-			// Check to see if this property should be included via the
-			// blacklist/whitelist filtering
-			$propertyPermissions = $this->initPermissions($annotation);
+			// Need to have an annotation and a name defined for the method
+			if($annotation != null && $annotation->name !== null) {
 
-			if($propertyPermissions->hasAccess()) {
+				// Check to see if this property should be included via the
+				// blacklist/whitelist filtering
+				$propertyPermissions = $this->initFieldPermissions($permissions, $annotation->name, $annotation);
 
-				if ($annotation !== null) {
+				if ($propertyPermissions->hasRead()) {
 
-					$fieldName = null;
-					$fieldType = null;
-					$fieldDescription = null;
-					$resolverClass = null;
+					if ($annotation !== null) {
 
-					// Get the name to use for the property
-					if ($annotation->name !== null) {
-						$fieldName = $annotation->name;
-					}
+						$fieldName = null;
+						$fieldType = null;
+						$fieldDescription = null;
+						$resolverClass = null;
 
-					// Get the type to use for the property
-					if ($annotation->type !== null) {
-						$fieldType = $this->mapFieldType($annotation->type);
-					}
+						// Get the name to use for the property
+						if ($annotation->name !== null) {
+							$fieldName = $annotation->name;
+						}
 
-					if ($annotation->description !== null) {
-						$fieldDescription = $annotation->description;
-					}
+						// Get the type to use for the property
+						if ($annotation->type !== null) {
+							$fieldType = $this->mapFieldType($annotation->type);
+						}
 
-					if ($annotation->resolver !== null) {
-						$resolverClass = $annotation->resolver;
-					}
+						if ($annotation->description !== null) {
+							$fieldDescription = $annotation->description;
+						}
 
-					// Both name and type are required to add this property
-					// to the GraphQL type.
-					if ($fieldName !== null && $fieldType !== null) {
+						if ($annotation->resolver !== null) {
+							$resolverClass = $annotation->resolver;
+						}
 
-						// Use the default method resolver if not override has been set
-						if ($resolverClass === null)
-							$resolverClass = DoctrineMethod::class;
+						// Both name and type are required to add this property
+						// to the GraphQL type.
+						if ($fieldName !== null && $fieldType !== null) {
 
-						// Instantiate the resolver
-						$resolver = new $resolverClass($fieldName, $fieldType, $fieldDescription, $methodName);
+							// Use the default method resolver if not override has been set
+							if ($resolverClass === null)
+								$resolverClass = DoctrineMethod::class;
 
-						$fields[$fieldName] = $resolver->getDefinition();
+							// Instantiate the resolver
+							$resolver = new $resolverClass($fieldName, $fieldType, $fieldDescription, $methodName);
+
+							$fields[$fieldName] = $resolver->getDefinition();
+
+						}
 
 					}
 
@@ -553,7 +578,7 @@ class DoctrineProvider Implements IGraphQLProvider {
 		 * Process each of the associations on the entity. Determine if the association is to
 		 * be included as a property
 		 */
-		$config['fields'] = function() use ($entityMetaType, $fields) {
+		$config['fields'] = function() use ($entityMetaType, $fields, $permissions) {
 
 			foreach ($entityMetaType->getAssociationMappings() as $association) {
 
@@ -564,10 +589,10 @@ class DoctrineProvider Implements IGraphQLProvider {
 				// Attempt to get the annotation on the field
 				$annotation = $this->_reader->getPropertyAnnotation($class->getProperty($fieldName), self::ANNOTATION_PROPERTY);
 
-				$propertyPermissions = $this->initPermissions($annotation);
+				$propertyPermissions = $this->initFieldPermissions($permissions, ($annotation->name === null ? $fieldName : $annotation->name), $annotation);
 
 				// Check to see if this property should be included
-				if($propertyPermissions->hasAccess()) {
+				if($propertyPermissions->hasRead()) {
 
 					$doctrineClass = $association['targetEntity'];
 					$graphName	   = $this->getTypeName($doctrineClass);
@@ -669,7 +694,7 @@ class DoctrineProvider Implements IGraphQLProvider {
 
 		$inputFilterConfig = [
 			'name' => $config['name'] . '__Filter',
-			'fields' => function() use ($entityMetaType, $filterFields, $class) {
+			'fields' => function() use ($entityMetaType, $filterFields, $class, $permissions) {
 
 				foreach ($entityMetaType->getAssociationMappings() as $association) {
 
@@ -682,10 +707,10 @@ class DoctrineProvider Implements IGraphQLProvider {
 						// Attempt to get the annotation on the field
 						$annotation = $this->_reader->getPropertyAnnotation($class->getProperty($fieldName), self::ANNOTATION_PROPERTY);
 
-						$propertyPermissions = $this->initPermissions($annotation);
+						$propertyPermissions = $this->initFieldPermissions($permissions, ($annotation->name === null ? $fieldName : $annotation->name), $annotation);
 
 						// Check to see if this property should be included
-						if ($propertyPermissions->hasAccess()) {
+						if ($propertyPermissions->hasRead()) {
 
 							// Define the filters
 							$filterFields[$fieldName] = array(
@@ -718,7 +743,7 @@ class DoctrineProvider Implements IGraphQLProvider {
 
 		$inputQueryFilterConfig = [
 			'name' => $config['name'] . '__QueryFilter',
-			'fields' => function() use ($entityMetaType, $queryFilterFields, $class) {
+			'fields' => function() use ($entityMetaType, $queryFilterFields, $class, $permissions) {
 
 				foreach ($entityMetaType->getAssociationMappings() as $association) {
 
@@ -731,10 +756,10 @@ class DoctrineProvider Implements IGraphQLProvider {
 						// Attempt to get the annotation on the field
 						$annotation = $this->_reader->getPropertyAnnotation($class->getProperty($fieldName), self::ANNOTATION_PROPERTY);
 
-						$propertyPermissions = $this->initPermissions($annotation);
+						$propertyPermissions = $this->initFieldPermissions($permissions, ($annotation->name === null ? $fieldName : $annotation->name), $annotation);
 
 						// Check to see if this property should be included
-						if ($propertyPermissions->hasAccess()) {
+						if ($propertyPermissions->hasRead()) {
 
 							// Define the input properties
 							$queryFilterFields[$fieldName] = array(
@@ -766,7 +791,7 @@ class DoctrineProvider Implements IGraphQLProvider {
 
 		$inputConfig = [
 			'name' => $config['name'] . '__Input',
-			'fields' => function() use ($entityMetaType, $inputFields, $class) {
+			'fields' => function() use ($entityMetaType, $inputFields, $class, $permissions) {
 
 				foreach ($entityMetaType->getAssociationMappings() as $association) {
 
@@ -779,10 +804,10 @@ class DoctrineProvider Implements IGraphQLProvider {
 						// Attempt to get the annotation on the field
 						$annotation = $this->_reader->getPropertyAnnotation($class->getProperty($fieldName), self::ANNOTATION_PROPERTY);
 
-						$propertyPermissions = $this->initPermissions($annotation);
+						$propertyPermissions = $this->initFieldPermissions($permissions, ($annotation->name === null ? $fieldName : $annotation->name), $annotation);
 
 						// Check to see if this property should be included
-						if ($propertyPermissions->hasAccess()) {
+						if ($propertyPermissions->hasRead()) {
 
 							// Define the input properties
 							$inputFields[$fieldName] = array(
@@ -800,10 +825,10 @@ class DoctrineProvider Implements IGraphQLProvider {
 						// Attempt to get the annotation on the field
 						$annotation = $this->_reader->getPropertyAnnotation($class->getProperty($fieldName), self::ANNOTATION_PROPERTY);
 
-						$propertyPermissions = $this->initPermissions($annotation);
+						$propertyPermissions = $this->initFieldPermissions($permissions, ($annotation->name === null ? $fieldName : $annotation->name), $annotation);
 
 						// Check to see if this property should be included
-						if ($propertyPermissions->hasAccess()) {
+						if ($propertyPermissions->hasRead()) {
 
 							$inputFields[$fieldName] = array(
 								'name' => $fieldName,
@@ -1061,6 +1086,16 @@ class DoctrineProvider Implements IGraphQLProvider {
 
 	}
 
+	public function getDirectives(){
+
+		$directives = array();
+
+		// TODO
+
+		return $directives;
+
+	}
+
 	/**
 	 * Initialize a buffer for a given type and identifier
 	 *
@@ -1095,12 +1130,24 @@ class DoctrineProvider Implements IGraphQLProvider {
 	 *
 	 * @param $type
 	 */
-	public function getPermissions($type){
+	public function getPermissions($name){
 
-		if(isset($this->_permissionsByType[$type]))
-			return $this->_permissionsByType[$type];
+		if(isset($this->_permissionsByType[$name]))
+			return $this->_permissionsByType[$name];
 
-		return new Permission();
+		return new ObjectPermission();
+
+	}
+
+	public function getAllPermissions(){
+
+		$permissions = [];
+
+		foreach($this->_permissionsByType as $name => $permission){
+			$permissions = array_merge($permissions, $permission->getAllPermissions());
+		}
+
+		return $permissions;
 
 	}
 

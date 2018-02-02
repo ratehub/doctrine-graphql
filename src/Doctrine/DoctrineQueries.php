@@ -43,7 +43,7 @@ class DoctrineQueries implements IGraphQLQueryProvider{
 
 			$permissions = $this->_typeProvider->getPermissions($graphName);
 
-			if($permissions->read) {
+			if($permissions->hasRead()) {
 
 				$graphType = $this->_typeProvider->getType($graphName);
 

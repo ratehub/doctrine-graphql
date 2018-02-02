@@ -77,13 +77,13 @@ class DoctrineMutators implements IGraphQLMutatorProvider{
 					);
 
 					// Build the Create, Update, Delete Mutators
-					if($permissions->create)
+					if($permissions->hasCreate())
 						$mutators = array_merge($mutators, $this->getCreateMutator($typeKey, $type, $args));
 
-					if($permissions->edit)
+					if($permissions->hasEdit())
 						$mutators = array_merge($mutators, $this->getUpdateMutator($typeKey, $type, $args));
 
-					if($permissions->delete)
+					if($permissions->hasDelete())
 						$mutators = array_merge($mutators, $this->getDeleteMutator($typeKey, $type, $args));
 
 				}
