@@ -64,7 +64,9 @@ class TestFactoryDefault implements TestFactory{
 		];
 		$option->em = $this->em;
 
-		return new DoctrineProvider('TestProvider', $option);
+		$authHandler = new AuthorizationHandlerTest();
+
+		return new DoctrineProvider('TestProvider', $option, $authHandler);
 
 	}
 
@@ -81,9 +83,10 @@ class TestFactoryDefault implements TestFactory{
 
 		// Initialize the schema
 		$schema = new Schema([
-			'query' => $queryType,
-			'mutation' => $mutatorType,
-			'types' => $provider->getTypes()
+			'query' 		=> $queryType,
+			'mutation' 		=> $mutatorType,
+			'types' 		=> $provider->getTypes(),
+			'directives' 	=> $provider->getDirectives()
 		]);
 
 		return $schema;
