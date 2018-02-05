@@ -4,6 +4,9 @@ namespace RateHub\GraphQL\Doctrine\Types;
 
 use \GraphQL\Type\Definition\ScalarType;
 
+use RateHub\GraphQL\Interfaces\IGraphQLFilterable;
+use RateHub\GraphQL\Doctrine\Filters\FilterNumber;
+
 /**
  * Class BigInt Type
  *
@@ -13,7 +16,7 @@ use \GraphQL\Type\Definition\ScalarType;
  *
  * @package App\Api\GraphQL\Types
  */
-class BigIntType extends ScalarType {
+class BigIntType extends ScalarType implements IGraphQLFilterable {
 
 
 	// Note: name can be omitted. In this case it will be inferred from class name
@@ -63,6 +66,16 @@ class BigIntType extends ScalarType {
 	{
 
 		return $valueNode->value;
+
+	}
+
+	public function getFilters($provider) {
+
+		$filters = [
+			'filternumberbigint' => FilterNumber::getType($provider->getType($this->name))
+		];
+
+		return $filters;
 
 	}
 

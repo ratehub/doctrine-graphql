@@ -48,7 +48,7 @@ class DoctrineProviderCest
 
         $types = $provider->getTypes();
 
-        $I->assertEquals(16, count($types));
+        $I->assertEquals(18, count($types));
 
         $userType = $provider->getType('User');
 

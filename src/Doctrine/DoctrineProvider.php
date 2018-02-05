@@ -5,6 +5,7 @@ namespace RateHub\GraphQL\Doctrine;
 use Doctrine\ORM\Mapping\ClassMetadataInfo;
 use GraphQL\Type\Definition\ListOfType;
 use GraphQL\Type\Definition\StringType;
+use RateHub\GraphQL\Interfaces\IGraphQLFilterable;
 use RateHub\GraphQL\Interfaces\IGraphQLProvider;
 
 use Doctrine\ORM\EntityManagerInterface;
@@ -12,6 +13,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use GraphQL\Type\Definition\Type;
 use GraphQL\Type\Definition\ScalarType;
 use GraphQL\Type\Definition\ObjectType;
+use GraphQL\Type\Definition\IntType;
 use GraphQL\Type\Definition\InputObjectType;
 use GraphQL\Type\Definition\InterfaceType;
 
@@ -19,6 +21,7 @@ use RateHub\GraphQL\Doctrine\Authorization\AuthorizationHandler;
 use RateHub\GraphQL\Doctrine\Authorization\ObjectPermission;
 use RateHub\GraphQL\Doctrine\Authorization\FieldPermission;
 use RateHub\GraphQL\Doctrine\Types\DateTimeType;
+use RateHub\GraphQL\Doctrine\Types\BigIntType;
 
 use RateHub\GraphQL\Doctrine\Resolvers\DoctrineField;
 use RateHub\GraphQL\Doctrine\Resolvers\DoctrineMethod;
@@ -34,6 +37,7 @@ use GraphQL\Type\Definition\FieldArgument;
 use RateHub\GraphQL\Doctrine\Filters\FilterDateTimeBetween;
 use RateHub\GraphQL\Doctrine\Filters\FilterDateTime;
 use RateHub\GraphQL\Doctrine\Filters\FilterString;
+use RateHub\GraphQL\Doctrine\Filters\FilterNumber;
 
 
 /**
@@ -341,6 +345,17 @@ class DoctrineProvider Implements IGraphQLProvider {
 
             foreach ($this->_options->scalars as $name => $type) {
                 $this->_types[$name] = new $type();
+
+                // If the additional type supports filters then add them to the
+				// list of types.
+                if($this->_types[$name] instanceof IGraphQLFilterable){
+
+                	foreach($this->_types[$name]->getFilters($this) as $filterName => $filter){
+						$this->_types[$filterName] = $filter;
+					}
+
+				}
+
             }
 
         }
@@ -354,6 +369,7 @@ class DoctrineProvider Implements IGraphQLProvider {
 
 		$this->_types[GraphPageInfo::NAME]	= GraphPageInfo::getType();
 		$this->_types[FilterString::NAME]	= FilterString::getType();
+		$this->_types[FilterNumber::NAME . 'int'] = FilterNumber::getType(Type::int());
 		$this->_types[FilterDateTimeBetween::NAME]	= FilterDateTimeBetween::getType($this->getType('datetime'));
 		$this->_types[FilterDateTime::NAME]	= FilterDateTime::getType($this->getType('datetime'), $this->getType(FilterDateTimeBetween::NAME));
 
@@ -484,10 +500,20 @@ class DoctrineProvider Implements IGraphQLProvider {
 						'name' => $fieldName,
 						'type' => $this->getType(FilterString::NAME)
 					);
-				}else if($fieldType instanceof DateTimeType){
+				}else if($fieldType instanceof DateTimeType) {
 					$queryFilterFields[$fieldName] = array(
 						'name' => $fieldName,
 						'type' => $this->getType(FilterDateTime::NAME)
+					);
+				}else if($fieldType instanceof BigIntType) {
+					$queryFilterFields[$fieldName] = array(
+						'name' => $fieldName,
+						'type' => $this->getType(FilterNumber::NAME . 'bigint')
+					);
+				}else if($fieldType instanceof IntType){
+					$queryFilterFields[$fieldName] = array(
+						'name' => $fieldName,
+						'type' => $this->getType(FilterNumber::NAME . 'int')
 					);
 				}else{
 					$queryFilterFields[$fieldName] = array(

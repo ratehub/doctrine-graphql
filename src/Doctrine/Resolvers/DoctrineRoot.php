@@ -12,6 +12,7 @@ use RateHub\GraphQL\Doctrine\GraphResultList;
 use RateHub\GraphQL\Doctrine\GraphPageInfo;
 use RateHub\GraphQL\Doctrine\Filters\FilterString;
 use RateHub\GraphQL\Doctrine\Filters\FilterDateTime;
+use RateHub\GraphQL\Doctrine\Filters\FilterNumber;
 
 use Doctrine\ORM\Query;
 
@@ -213,6 +214,40 @@ class DoctrineRoot implements IGraphQLResolver {
 								$qb->andWhere('e.' . $name . ' BETWEEN :from AND :to');
 								$qb->setParameter('from', $values['between']['from']);
 								$qb->setParameter('to', $values['between']['to']);
+
+							}
+
+						}else if(substr($fieldType->name, 0, strlen(FilterNumber::NAME)) === FilterNumber::NAME ) {
+
+							if(isset($values['in'])){
+
+								$qb->andWhere($qb->expr()->in('e.' . $name, ':' . $name));
+								$qb->setParameter($name, $values['in']);
+
+							}else if(isset($values['equals'])){
+
+								$qb->andWhere($qb->expr()->eq('e.' . $name, ':' . $name));
+								$qb->setParameter($name, $values['equals']);
+
+							}else if(isset($values['greater'])){
+
+								$qb->andWhere('e.' . $name . ' > :'. $name);
+								$qb->setParameter($name, $values['greater']);
+
+							}else if(isset($values['less'])){
+
+								$qb->andWhere('e.' . $name . ' < :'. $name);
+								$qb->setParameter($name, $values['less']);
+
+							}else if(isset($values['greaterOrEquals'])){
+
+								$qb->andWhere('e.' . $name . ' >= :'. $name);
+								$qb->setParameter($name, $values['greaterOrEquals']);
+
+							}else if(isset($values['lessOrEquals'])){
+
+								$qb->andWhere('e.' . $name . ' <= :'. $name);
+								$qb->setParameter($name, $values['lessOrEquals']);
 
 							}
 
