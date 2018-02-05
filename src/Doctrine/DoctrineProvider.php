@@ -368,6 +368,7 @@ class DoctrineProvider Implements IGraphQLProvider {
 	private function initializeCoreTypes(){
 
 		$this->_types[GraphPageInfo::NAME]	= GraphPageInfo::getType();
+		$this->_types[GraphSortField::NAME]	= GraphSortField::getType();
 		$this->_types[FilterString::NAME]	= FilterString::getType();
 		$this->_types[FilterNumber::NAME . 'int'] = FilterNumber::getType(Type::int());
 		$this->_types[FilterDateTimeBetween::NAME]	= FilterDateTimeBetween::getType($this->getType('datetime'));
@@ -437,7 +438,7 @@ class DoctrineProvider Implements IGraphQLProvider {
 		// Typically has more options including key and offset pagination.
 		$queryFilterFields = array();
 
-		$queryFilterFields = array_merge($queryFilterFields, GraphPageInfo::getQueryFilters());
+		$queryFilterFields = array_merge($queryFilterFields, GraphPageInfo::getQueryFilters($this));
 
 		// Input field are used by mutators. Similar to how regular fields are used
 		$inputFields = array();

@@ -58,13 +58,17 @@ class GraphPageInfo {
 	 *
 	 * @return array
 	 */
-	public static function getQueryFilters(){
+	public static function getQueryFilters($provider){
 
 		$filterFields = array();
 
 		$filterFields['first']  = array('name' => 'first',  'type' => Type::int());
 		$filterFields['after']  = array('name' => 'after',  'type' => Type::string());
 		$filterFields['offset'] = array('name' => 'offset', 'type' => Type::int());
+
+		$sortFieldType = $provider->getType(GraphSortField::NAME);
+
+		$filterFields['sort'] = array('name' => 'sort', 'type' => Type::listOf($sortFieldType));
 
 		return $filterFields;
 
@@ -138,9 +142,47 @@ class GraphPageInfo {
 
 		}
 
-		// Add Order By
-		foreach($identifiers as $id) {
-			$queryBuilder->addOrderBy('e.' . $id, 'ASC');
+		return $args;
+
+	}
+
+	/**
+	 * @param $queryBuilder
+	 * @param $identifiers
+	 * @param $args
+	 */
+	public static function sortQuery($queryBuilder, $identifiers, $args){
+
+		$hasOrderBy = false;
+
+		// Handle the first argument.
+		if(array_key_exists('sort', $args)){
+
+			foreach($args['sort'] as $sortField){
+
+				$sortDirection = strtolower((isset($sortField['order']) ? $sortField['order'] : 'asc' ));
+
+				if(!($sortDirection == 'asc' || $sortDirection == 'desc'))
+					$sortDirection = 'asc';
+
+				$queryBuilder->addOrderBy('e.' . $sortField['field'], $sortField['order']);
+
+			}
+
+			// Remove argument once used
+			unset($args['sort']);
+
+			$hasOrderBy = true;
+
+		}
+
+		if(!$hasOrderBy){
+
+			// Add Order By
+			foreach($identifiers as $id) {
+				$queryBuilder->addOrderBy('e.' . $id, 'ASC');
+			}
+
 		}
 
 		return $args;

@@ -397,6 +397,8 @@ class DoctrineToMany implements IGraphQLResolver {
 			// only be adding the order by statement
 			$args = GraphPageInfo::paginateQuery($queryBuilder, $targetIdentifiers, $args);
 
+			$args = GraphPageInfo::sortQuery($queryBuilder, $targetIdentifiers, $args);
+
 			// Add additional where statements based on passed arguments.
 			foreach ($args as $name => $values) {
 
@@ -601,6 +603,8 @@ class DoctrineToMany implements IGraphQLResolver {
 
 				// Add limit and order DQL statements
 				$filteredArgs = GraphPageInfo::paginateQuery($queryBuilder, $identifiers, $args);
+
+				$filteredArgs = GraphPageInfo::paginateQuery($queryBuilder, $identifiers, $filteredArgs);
 
 				// Add additional where clauses based on query arguments
 				foreach ($filteredArgs as $name => $values) {

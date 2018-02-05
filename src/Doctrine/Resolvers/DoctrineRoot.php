@@ -121,6 +121,8 @@ class DoctrineRoot implements IGraphQLResolver {
 				// on the supplied args. Args get removed once used.
 				$filteredArgs = GraphPageInfo::paginateQuery($qb, $identifiers, $args);
 
+				$filteredArgs = GraphPageInfo::sortQuery($qb, $identifiers, $filteredArgs);
+
 				$joinCount = 0;
 
 				// Add additional WHERE clauses based are filters
