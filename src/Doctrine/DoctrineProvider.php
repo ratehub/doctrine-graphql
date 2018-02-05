@@ -31,6 +31,10 @@ use GraphQL\Type\Definition\Directive;
 use GraphQL\Type\Definition\DirectiveLocation;
 use GraphQL\Type\Definition\FieldArgument;
 
+use RateHub\GraphQL\Doctrine\Filters\FilterDateTimeBetween;
+use RateHub\GraphQL\Doctrine\Filters\FilterDateTime;
+use RateHub\GraphQL\Doctrine\Filters\FilterString;
+
 
 /**
  * Class DoctrineProvider

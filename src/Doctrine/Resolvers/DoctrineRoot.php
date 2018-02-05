@@ -10,8 +10,8 @@ use RateHub\GraphQL\Doctrine\GraphHydrator;
 use RateHub\GraphQL\Doctrine\Types\JsonType;
 use RateHub\GraphQL\Doctrine\GraphResultList;
 use RateHub\GraphQL\Doctrine\GraphPageInfo;
-use RateHub\GraphQL\Doctrine\FilterString;
-use RateHub\GraphQL\Doctrine\FilterDateTime;
+use RateHub\GraphQL\Doctrine\Filters\FilterString;
+use RateHub\GraphQL\Doctrine\Filters\FilterDateTime;
 
 use Doctrine\ORM\Query;
 

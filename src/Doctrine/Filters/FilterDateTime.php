@@ -1,6 +1,6 @@
 <?php
 
-namespace RateHub\GraphQL\Doctrine;
+namespace RateHub\GraphQL\Doctrine\Filters;
 
 use GraphQL\Type\Definition\InputObjectType;
 
