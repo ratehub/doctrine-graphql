@@ -38,6 +38,16 @@ will handle the Object hydration once all queries are finished and the data is r
 
  The provider supports key and offset pagination for top level queries. Also supports limiting
  results returned in an n-to-Many relationship.
+
+### Sorting
+
+ A queries results can be sorted by one or more fields in either ascending or descending order.
+ 
+### Query Filters for Types
+
+ Core types such as Strings, DateTime, Int, and BigInt support filters such as 
+ 
+ equals, in, less, greater, lessOrEqual, greaterOrEqual, between
  
 ### Polymorphic Entities	
 
