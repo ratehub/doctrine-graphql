@@ -1,5 +1,8 @@
 # doctrine-graphql 
 ![Build Status](https://travis-ci.org/ratehub/doctrine-graphql.svg?branch=master "Build Status")
+[![Total Downloads](https://poser.pugx.org/ratehub/doctrine-graphql/downloads)](https://packagist.org/packages/ratehub/doctrine-graphql)
+[![Latest Stable Version](https://poser.pugx.org/ratehub/doctrine-graphql/v/stable)](https://packagist.org/packages/ratehub/doctrine-graphql)
+[![License](https://poser.pugx.org/ratehub/doctrine-graphql/license)](https://packagist.org/packages/ratehub/doctrine-graphql)
 
 Generates all the necessary types, queries and mutators using the Doctrine
 model metadata. All standard data fetching uses the doctrine Array Hydrator. This provider
@@ -13,10 +16,9 @@ will handle the Object hydration once all queries are finished and the data is r
  *  Whitelisting will only include types/properties that are marked for inclusion
  *  Blacklisting will only include types/properties that are not marked for exclusion
 
-### Namespaces			
+### Authorization			
 
- Along with white and blacklists types and properties can be associated to different namespaces
- and specify CRED operations that are allowed for those namespaces. 
+ An authorization provider can be implemented to limit access to types and fields via cred level permissions 
  
 ### Naming Overrides 	
 
