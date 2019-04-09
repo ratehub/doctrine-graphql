@@ -68,7 +68,7 @@ class GraphHydrator {
 
 
 		// Create the doctrine entity and initialize
-		$entity = $this->newInstance($instanceType);
+		$entity = $this->newInstance($instanceType, $this->getId($instanceType, $data));
 
         if(method_exists($entity, '__init'))
 		    $entity->__init();
@@ -95,10 +95,12 @@ class GraphHydrator {
 	 * @param $class
 	 * @return mixed
 	 */
-	private function newInstance($class)
+	private function newInstance($class, $id)
 	{
 
-		$entity = $class->newInstance();
+        $entity = $this->_em->getProxyFactory()->getProxy($class->name, $id);
+
+		//$entity = $class->newInstance();
 
 		if ($entity instanceof \Doctrine\Common\Persistence\ObjectManagerAware) {
 			$entity->injectObjectManager($this->em, $class);
@@ -107,6 +109,27 @@ class GraphHydrator {
 		return $entity;
 
 	}
+
+	protected function getId($class, $data){
+        // Generate the unique id
+        if ($class->isIdentifierComposite) {
+            $id = array();
+
+            foreach ($class->identifier as $fieldName) {
+                $id[$fieldName] = isset($class->associationMappings[$fieldName])
+                    ? $data[$class->associationMappings[$fieldName]['joinColumns'][0]['name']]
+                    : $data[$fieldName];
+            }
+        } else {
+            $fieldName = $class->identifier[0];
+            $id        = array(
+                $fieldName => isset($class->associationMappings[$fieldName])
+                    ? $data[$class->associationMappings[$fieldName]['joinColumns'][0]['name']]
+                    : $data[$fieldName]
+            );
+        }
+        return $id;
+    }
 
 	/**
 	 * Method generates a unique id for the entity based on the values
@@ -118,26 +141,11 @@ class GraphHydrator {
 	 * @param $entity
 	 * @param array $data
 	 */
-	protected function registerManaged($class, $entity, array $data)
+	protected function  registerManaged($class, $entity, array $data)
 	{
 
-		// Generate the unique id
-		if ($class->isIdentifierComposite) {
-			$id = array();
 
-			foreach ($class->identifier as $fieldName) {
-				$id[$fieldName] = isset($class->associationMappings[$fieldName])
-					? $data[$class->associationMappings[$fieldName]['joinColumns'][0]['name']]
-					: $data[$fieldName];
-			}
-		} else {
-			$fieldName = $class->identifier[0];
-			$id        = array(
-				$fieldName => isset($class->associationMappings[$fieldName])
-					? $data[$class->associationMappings[$fieldName]['joinColumns'][0]['name']]
-					: $data[$fieldName]
-			);
-		}
+	    $id = $this->getId($class, $data);
 
 		// Register the entity with doctrine
 		$this->_em->getUnitOfWork()->registerManaged($entity, $id, $data);

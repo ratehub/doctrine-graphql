@@ -120,8 +120,9 @@ class DoctrineToMany implements IGraphQLResolver {
 
 				// Retrieve the id from the parent object.
 				// Id can be a single field or a composite.
+                $className = str_replace('DoctrineProxies\\__CG__\\', '', get_class($parent->getObject()));
 
-				$parentTypeName = $this->typeProvider->getTypeName(get_class($parent->getObject()));
+				$parentTypeName = $this->typeProvider->getTypeName($className);
 
 				$sourceIdentifiers = $this->typeProvider->getTypeIdentifiers($parentTypeName);
 

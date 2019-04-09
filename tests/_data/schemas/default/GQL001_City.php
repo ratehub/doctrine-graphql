@@ -38,6 +38,16 @@ class GQL001_City {
      */
     public $province;
 
+    /**
+     * @GraphQLProperty(
+     *      name="provinceCode",
+     *      type="string",
+     *      include=true)
+     */
+    public function getProvinceCode(){
+        return $this->province->code;
+    }
+
 	/** @ManyToOne(targetEntity="GQL001_Location", inversedBy="cities")
 	 *  @JoinColumns({
 	 *     @JoinColumn(name="lat", referencedColumnName="lat"),

@@ -154,6 +154,7 @@ class QueryCest {
 				      created_at
 				    }  	
 				  }
+				  provinceCode
 				  province{
 				    code
 				  }
@@ -172,6 +173,9 @@ class QueryCest {
 		$item = $result["data"]["City"]["items"][0];
 
 		$I->assertEquals(1, $item['id']);
+
+		// Test method resolver accessing related entities
+        $I->assertEquals('ON', $item['provinceCode']);
 
 		$I->assertEquals('ON', $item['province']['code']);
 
