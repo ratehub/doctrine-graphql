@@ -8,7 +8,7 @@ use Doctrine\Common\Annotations\AnnotationRegistry;
 class TestDb
 {
 
-    public static function createEntityManager($schema){
+    public static function createEntityManager($schema, $options = []){
 
 		$path = './tests/_data/schemas/' . strtolower($schema);
 
@@ -31,6 +31,9 @@ class TestDb
         $config->setQueryCacheImpl($arrayCache);
         $config->setResultCacheImpl($arrayCache);
         $config->setMetadataCacheImpl($arrayCache);
+
+        if(isset($options['ProxyNamespace']))
+            $config->setProxyNamespace($options['ProxyNamespace']);
 
         $entityManager = EntityManager::create($dbParams, $config);
 

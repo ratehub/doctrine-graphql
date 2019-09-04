@@ -24,9 +24,9 @@ class TestFactoryDefault implements TestFactory{
 
 	public $em;
 
-	public function __construct(){
+	public function __construct($options = null){
 
-		$this->em = TestDb::createEntityManager(self::SCHEMA);
+		$this->em = TestDb::createEntityManager(self::SCHEMA, $options);
 
 	}
 

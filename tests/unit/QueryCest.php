@@ -1,22 +1,9 @@
 <?php
 
 use RateHub\GraphQL\GraphContext;
-use RateHub\GraphQL\Doctrine\DoctrineProvider;
-use RateHub\GraphQL\Doctrine\DoctrineProviderOptions;
-
-use Doctrine\DBAL\Schema\Table;
-use GraphQL\Type\Definition\ObjectType;
-use GraphQL\Schema;
-
-use DoctrineGraph\Schema\GQL001\GQL001_Project;
 use DoctrineGraph\Schema\GQL001\GQL001_User;
-use DoctrineGraph\Schema\GQL001\GQL001_City;
-use DoctrineGraph\Schema\GQL001\GQL001_Interest;
-use DoctrineGraph\Schema\GQL001\GQL001_Province;
 use DoctrineGraph\Schema\GQL001\GQL001_Location;
-use DoctrineGraph\Schema\GQL001\GQL001_Sector;
 
-use Doctrine\DBAL\Types\Type;
 
 class QueryCest {
 
