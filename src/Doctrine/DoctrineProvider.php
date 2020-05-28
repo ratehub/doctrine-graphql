@@ -672,10 +672,6 @@ class DoctrineProvider Implements IGraphQLProvider {
 
             $interfaceConfig = $config;
 
-            $interfaceKey = $name . '__Interface';
-
-            $interfaceConfig['name'] = $interfaceConfig['name'] . '__Interface';
-
             $interfaceConfig['resolveType'] = function($value) use ($entityMetaType){
 
                 $column = $entityMetaType->discriminatorColumn['fieldName'];
@@ -690,9 +686,9 @@ class DoctrineProvider Implements IGraphQLProvider {
             };
 
             // Instantiate the interface
-            $this->_types[$interfaceKey] = new InterfaceType($interfaceConfig);
+            $this->_types[$name] = new InterfaceType($interfaceConfig);
 
-            array_push($interfaces, $this->getType($interfaceKey));
+            array_push($interfaces, $this->getType($name));
 
             $config['interfaces'] = $interfaces;
 
@@ -705,7 +701,7 @@ class DoctrineProvider Implements IGraphQLProvider {
 
             	$parentName = $this->getTypeName($parent);
 
-                array_push($interfaces, $this->getType($parentName . '__Interface'));
+                array_push($interfaces, $this->getType($parentName));
             }
 
             if(count($interfaces) > 0)
@@ -714,7 +710,9 @@ class DoctrineProvider Implements IGraphQLProvider {
         }
 
         // Instantiate the object type if it's not an abstract type
-        $this->_types[$name] = new ObjectType($config);
+        if(!$this->hasSubClasses($entityMetaType)) {
+            $this->_types[$name] = new ObjectType($config);
+        }
 
 
 		/* -----------------------------------------------
