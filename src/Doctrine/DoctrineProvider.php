@@ -668,7 +668,9 @@ class DoctrineProvider Implements IGraphQLProvider {
 
         $interfaces = [];
 
-		if($this->hasSubClasses($entityMetaType)){
+        // Only use the phpgraphql interfaces if a class has subclasses and the class isn't in it's
+        // on descriminator map
+		if($this->hasSubClasses($entityMetaType) && !$this->inOwnDiscriminatorMap($entityMetaType)){
 
             $interfaceConfig = $config;
 
@@ -701,7 +703,10 @@ class DoctrineProvider Implements IGraphQLProvider {
 
             	$parentName = $this->getTypeName($parent);
 
-                array_push($interfaces, $this->getType($parentName));
+                if($this->getType($parentName) instanceof InterfaceType) {
+                    array_push($interfaces, $this->getType($parentName));
+                }
+
             }
 
             if(count($interfaces) > 0)
@@ -710,7 +715,7 @@ class DoctrineProvider Implements IGraphQLProvider {
         }
 
         // Instantiate the object type if it's not an abstract type
-        if(!$this->hasSubClasses($entityMetaType)) {
+        if(!($this->hasSubClasses($entityMetaType) && !$this->inOwnDiscriminatorMap($entityMetaType))) {
             $this->_types[$name] = new ObjectType($config);
         }
 
@@ -900,6 +905,17 @@ class DoctrineProvider Implements IGraphQLProvider {
 
 	    return !(count($entityMetaType->parentClasses) === 0);
 
+    }
+
+    // If a class is in it's own discriminator map then we don't want
+    // to use the php-graphql interfaces
+    private function inOwnDiscriminatorMap($entityMetaType){
+        foreach($entityMetaType->discriminatorMap as $key => $class){
+            if($class === $entityMetaType->name) {
+                return true;
+            }
+        }
+        return false;
     }
 
 	/**
